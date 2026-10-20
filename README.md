@@ -117,7 +117,7 @@ d:\Webapp Audit/
 
 ## 5. Các Ràng buộc Nghiệp vụ Cốt lõi Đã Chuẩn hóa (Business Workflow Invariants)
 
-Hệ thống tuân thủ nghiêm ngặt 5 bất biến nghiệp vụ quy định trong **AuditFlow Operating Specification v1.1**:
+Hệ thống tuân thủ nghiêm ngặt các bất biến nghiệp vụ quy định trong **AuditFlow Operating Specification v1.1**:
 
 1. **Lưu trữ Audit Case Bất biến (Immutable Audit Case & Issues Snapshot)**:
    - Khi hoàn tất chấm điểm queue, hệ thống tạo một thực thể `AuditCase` bất biến kèm theo snapshot ngữ cảnh tại thời điểm chấm: `snapshotCustomerId`, `snapshotCustomerName`, `snapshotSaleId`, `snapshotTeamId`, `snapshotAuditorId`, `ruleVersion`.
@@ -128,19 +128,32 @@ Hệ thống tuân thủ nghiêm ngặt 5 bất biến nghiệp vụ quy định
    - Trước khi tạo action mới, hệ thống tự động kiểm tra cặp `customerId + issueCode`.
    - Nếu đã tồn tại action ở một trong các trạng thái đang mở (`OPEN`, `SALE_MARKED_DONE`, `IN_RECHECK`, `REOPENED`), hệ thống chặn tạo action trùng lặp, tự động liên kết queue item với action cũ qua `activeActionId` và hiển thị trạng thái `Đang theo dõi`.
 
-3. **Phân công Auditor Theo Ngày Hiệu Lực (Effective-date Assignment Resolution)**:
-   - Không đóng assignment hiện tại nếu phân công mới có ngày hiệu lực ở tương lai (`effectiveFrom > today`).
-   - Assignment hợp lệ được phân giải chính xác theo ngày chạy queue: `effective_from <= audit_date` và (`effective_to` rỗng hoặc `>= audit_date`).
-   - Chặn overlap: Một sale chỉ có duy nhất một auditor hiệu lực trong cùng một ngày.
-   - Queue đã tạo giữ nguyên `assignedAuditorId` dạng snapshot lịch sử, không bị ghi đè khi có phân công mới.
+3. **Siết Chặt Chu Trình Chuyển Trạng Thái Action (Action State Transitions Gate)**:
+   - Toàn bộ validation được kiểm soát chặt chẽ tại `workflowRules.ts` và `auditStore.tsx`:
+     - `saleMarkActionDone`: **CHỈ cho phép** khi action ở `OPEN` hoặc `REOPENED`. Từ chối mọi can thiệp khi action ở `SALE_MARKED_DONE`, `IN_RECHECK`, `VERIFIED_CLOSED`, `WAIVED` hoặc `CANCELLED`.
+     - `auditorStartRecheck`: **CHỈ cho phép** khi action đang ở trạng thái `SALE_MARKED_DONE`.
+     - `auditorSubmitRecheck`: **CHỈ cho phép** khi action đang ở `IN_RECHECK`.
+       - Kết luận `IMPROVED` **CHỈ chuyển sang** `VERIFIED_CLOSED`.
+       - Kết luận `NOT_IMPROVED` **CHỈ chuyển sang** `REOPENED`, bắt buộc phải có `nextDueDate` hợp lệ và lịch recheck tiếp theo.
+     - Mọi transition bị từ chối đều trả về thông báo lỗi rõ ràng, **tuyệt đối không thay đổi dữ liệu** và **không ghi log audit trail**.
+     - UI vô hiệu hóa và ẩn các nút thao tác không hợp lệ tương ứng với từng trạng thái.
 
-4. **Đo lường KPI "Đơn Cứu Được" Chuẩn Xác (Data-grounded Rescued Orders Attribution)**:
+4. **Kiểm Tra & Ngăn Chặn Overlap Phân Công Auditor (Auditor Assignment Interval Overlap Guarantees)**:
+   - Một sale **không thể có 2 assignment hiệu lực trong cùng bất kỳ ngày nào**.
+   - Kiểm tra overlap theo toàn bộ khoảng ngày `[effective_from, effective_to]` (với `effective_to = null` biểu thị vô hạn thời gian / open-ended).
+   - Khi tạo phân công mở mới (`effectiveTo = null`):
+     - Hệ thống tự động đóng phân công mở liền trước tại ngày trước ngày bắt đầu mới: `previous.effectiveTo = dayBefore(newEffectiveFrom)`.
+     - **Không bao giờ để 2 phân công tương lai cùng mở**.
+     - Ngăn chặn triệt để xung đột: Báo lỗi nếu trùng ngày bắt đầu hoặc rơi vào khoảng thời gian đã chốt lịch của phân công khác.
+     - Phân công tương lai **không làm thay đổi người phụ trách ở queue đã snapshot**.
+
+5. **Đo lường KPI "Đơn Cứu Được" Chuẩn Xác (Data-grounded Rescued Orders Attribution)**:
    - Loại bỏ hoàn toàn việc tăng giá trị doanh thu cứu được bằng số hard-code khi auditor duyệt đóng action.
    - Ghi nhận `AUDIT_ASSISTED` chỉ khi phát hiện bản ghi `SalesOrder` hợp lệ (`VALID`, không bị hủy/hoàn), phát sinh sau thời điểm tạo action (`actionCreatedAt`) và nằm trong attribution window (30 ngày).
    - Khử trùng lặp: Mỗi khách hàng / nhóm action chỉ được tính đơn cứu một lần trong chu kỳ.
    - Chỉ số hiệu suất auditor được tính toán động (dynamically derived) trực tiếp từ danh sách đơn hàng thực tế thỏa mãn điều kiện.
 
-5. **Siết Chặt Phân Quyền Tại Tầng Nghiệp Vụ (Strict RBAC in Store/Service Layer)**:
+6. **Siết Chặt Phân Quyền Tại Tầng Nghiệp Vụ (Strict RBAC in Store/Service Layer)**:
    - Validation quyền hạn được đóng gói hoàn toàn tại store layer (`auditStore.tsx`), UI chỉ đóng vai trò hiển thị:
      - `saleMarkActionDone`: Chỉ Sale sở hữu action mới có quyền thực hiện.
      - `auditorStartRecheck` và `auditorSubmitRecheck`: Chỉ Auditor được phân công phụ trách action mới có quyền thao tác.
@@ -184,12 +197,37 @@ Hệ thống tuân thủ nghiêm ngặt 5 bất biến nghiệp vụ quy định
 Dự án tích hợp GitHub Actions workflow tại `.github/workflows/ci.yml`:
 - Tự động chạy kiểm tra trên mỗi lần `push` và `pull_request` vào nhánh `main`.
 - Thực thi kiểm tra chất lượng code nghiêm ngặt:
-  - `npm run lint` (Oxlint / ESLint validation)
+  - `npm run lint` (Oxlint / ESLint validation - 0 warnings, 0 errors)
+  - `npm test` (Bộ automated unit tests kiểm tra toàn bộ state transitions & overlap intervals)
   - `npm run build` (TypeScript type checking và đóng gói production bundle Vite)
 
 ---
 
 ## 8. Hướng dẫn kịch bản Demo & Kiểm thử (UAT)
+
+1. **Kịch bản Khách hàng đa tag & Báo giá chưa chốt**:
+   - Vào menu **Audit Queue**, thấy dòng đầu tiên *"Công ty CP Kỹ thuật Hoàng Phát"* có 2 tag: `Khách hôm qua` và `Chưa báo giá 2 ngày`.
+   - Dòng *"Tập đoàn Xây dựng An Phong"* có tag `Báo giá chưa chốt 7 ngày` và badge `Đang theo dõi` (do đã có action mở trước đó).
+2. **Kịch bản Chấm Case & Sinh Action**:
+   - Bấm nút **Chấm Case** tại 1 dòng queue. Modal hiển thị lịch sử báo giá. Chọn 1 hoặc nhiều lỗi từ Checklist Catalog → Bấm *"Giao Action Khắc Phục (FAIL)"*.
+   - Hệ thống tự động chuyển trạng thái queue sang `COMPLETED_FAIL` và tạo Corrective Action mới giao cho Sale.
+3. **Kịch bản Chu Trình State Transition Nghiêm Ngặt của Corrective Action**:
+   - Chọn vai trò **Sale Nam Vũ**:
+     - Tại action `OPEN` hoặc `REOPENED`, tick *"Tôi đã thực hiện khắc phục"*, nhập ghi chú và tải ảnh bằng chứng → Bấm gửi. Trạng thái chuyển thành `SALE_MARKED_DONE`.
+     - Ngay sau khi chuyển thành `SALE_MARKED_DONE`, biểu mẫu gửi bị ẩn/khóa, hiển thị ghi chú đã nộp và thông báo chờ Auditor recheck. Sale không thể sửa đổi tiếp.
+   - Chọn vai trò **Auditor Linh Nguyễn**:
+     - Vào action ở `SALE_MARKED_DONE`: Khu vực đánh giá kết quả được khóa, hiển thị nút *"Bắt đầu Recheck"*.
+     - Bấm *"Bắt đầu Recheck"*: Trạng thái chuyển sang `IN_RECHECK` và mở biểu mẫu đánh giá.
+     - Thử chọn `NOT_IMPROVED`: Bắt buộc phải có ngày hạn mới (`nextDueDate`) → Bấm gửi → Action chuyển sang `REOPENED`.
+     - Thử chọn `IMPROVED`: Bấm gửi → Action chính thức ĐÓNG (`VERIFIED_CLOSED`).
+4. **Kịch bản Phân Công Auditor Liên Hoàn Không Trùng Lặp (A → B → C)**:
+   - Vào menu **Auditor Portfolio**, kiểm tra Sale **Lê Thu Hương (SALE-02)**:
+     - **Assignment A**: `Nguyễn Thùy Linh` từ `2026-08-01` đến `2026-10-26` (Đang hiệu lực hôm nay 20/10/2026).
+     - **Assignment B**: `Trần Quang Huy` từ `2026-10-27` đến `2026-11-02` (Sắp hiệu lực tuần sau).
+     - **Assignment C**: `Đỗ Thu Trang` từ `2026-11-03` trở đi (Sắp hiệu lực hai tuần sau, `effectiveTo = null`).
+     - Hoàn toàn **không có bất kỳ ngày nào bị overlap** giữa A, B và C.
+     - Hàng chờ audit quá khứ và hôm nay vẫn giữ nguyên snapshot phụ trách ban đầu của Linh Nguyễn.
+   - Thử tạo phân công trùng ngày hoặc chèn vào khoảng ngày đã có: Hệ thống lập tức chặn thao tác và hiển thị thông báo lỗi rõ ràng.
 
 1. **Kịch bản Khách hàng đa tag & Báo giá chưa chốt**:
    - Vào menu **Audit Queue**, thấy dòng đầu tiên *"Công ty CP Kỹ thuật Hoàng Phát"* có 2 tag: `Khách hôm qua` và `Chưa báo giá 2 ngày`.

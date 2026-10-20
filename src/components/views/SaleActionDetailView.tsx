@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Send,
   Lock,
+  Clock,
 } from 'lucide-react';
 import {
   Badge,
@@ -349,7 +350,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
               </div>
 
               {/* RBAC notice if current user is not the sale owner */}
-              {!isSaleOwner && !activeAction.saleMarkedDone && (
+              {!isSaleOwner && (activeAction.status === 'OPEN' || activeAction.status === 'REOPENED') && (
                 <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5 border border-amber-200/80 dark:border-amber-800/60">
                   <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                   <span>
@@ -358,7 +359,50 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 </div>
               )}
 
-              {activeAction.saleMarkedDone ? (
+              {/* State-specific UI for Sale section */}
+              {activeAction.status === 'VERIFIED_CLOSED' ? (
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-2">
+                  <div className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Action đã đóng (VERIFIED_CLOSED)</span>
+                  </div>
+                  <p>Quy trình khắc phục và nghiệm thu hoàn tất. Không thể sửa đổi thêm.</p>
+                  {activeAction.saleNotes && (
+                    <p className="italic text-slate-700 dark:text-slate-300">"{activeAction.saleNotes}"</p>
+                  )}
+                  {activeAction.saleEvidenceList.length > 0 && (
+                    <EvidencePreview evidenceList={activeAction.saleEvidenceList} title="Bằng chứng Sale đã nộp" readOnly={true} />
+                  )}
+                </div>
+              ) : activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED' ? (
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-semibold">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Action đã được Miễn trừ (WAIVED)</span>
+                  </div>
+                  <p>Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}</p>
+                </div>
+              ) : activeAction.status === 'IN_RECHECK' ? (
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-slate-700 dark:text-slate-300 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300 font-semibold">
+                      <Clock className="w-4 h-4" />
+                      <span>Auditor đang kiểm tra (IN_RECHECK)</span>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-400">
+                      Sale không thể chỉnh sửa action trong lúc Auditor đang nghiệm thu.
+                    </p>
+                    {activeAction.saleNotes && (
+                      <p className="text-slate-800 dark:text-slate-200 font-medium">
+                        Ghi chú đã nộp: "{activeAction.saleNotes}"
+                      </p>
+                    )}
+                  </div>
+                  {activeAction.saleEvidenceList.length > 0 && (
+                    <EvidencePreview evidenceList={activeAction.saleEvidenceList} title="Bằng chứng Sale đã gửi" readOnly={true} />
+                  )}
+                </div>
+              ) : activeAction.status === 'SALE_MARKED_DONE' ? (
                 /* Display Submitted Sale Data */
                 <div className="space-y-3 text-xs">
                   <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 space-y-1.5">
@@ -387,7 +431,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   </div>
                 </div>
               ) : (
-                /* Sale submission form */
+                /* Sale submission form: strictly allowed only on OPEN and REOPENED */
                 <form onSubmit={handleSaleSubmit} className="space-y-3.5 text-xs">
                   {/* Checkbox "Tôi đã thực hiện" strictly required per spec */}
                   <label className={`flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors ${isSaleOwner ? 'cursor-pointer hover:border-amber-500' : 'opacity-60 cursor-not-allowed'}`}>
@@ -484,24 +528,53 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                     Auditor đã kiểm tra và ghi nhận cải thiện (IMPROVED).
                   </p>
                 </div>
-              ) : (
-                /* Recheck execution form */
-                <div className="space-y-4 text-xs">
-                  {/* Step 1: Start Recheck trigger if status is SALE_MARKED_DONE */}
-                  {activeAction.status === 'SALE_MARKED_DONE' && (
-                    <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded-xl border border-purple-200 dark:border-purple-800 flex items-center justify-between">
-                      <span className="text-purple-900 dark:text-purple-200 font-medium">
-                        Sale đã gửi việc. Bắt đầu kiểm tra?
-                      </span>
-                      <button
-                        onClick={handleStartRecheck}
-                        disabled={!isAssignedAuditor}
-                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors disabled:opacity-50"
-                      >
-                        Bắt đầu Recheck
-                      </button>
+              ) : activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED' ? (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-center space-y-2">
+                  <ShieldCheck className="w-8 h-8 text-slate-400 mx-auto" />
+                  <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                    Action đã được Miễn trừ (WAIVED)
+                  </h4>
+                  <p className="text-slate-500">
+                    Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}
+                  </p>
+                </div>
+              ) : activeAction.status === 'OPEN' || activeAction.status === 'REOPENED' ? (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-2 text-center">
+                  <Clock className="w-8 h-8 text-slate-400 mx-auto" />
+                  <h4 className="font-bold text-slate-700 dark:text-slate-300">
+                    Chờ Sale khắc phục ({activeAction.status})
+                  </h4>
+                  <p>
+                    Auditor chỉ có thể bắt đầu recheck sau khi Sale đã tick "Tôi đã thực hiện" (trạng thái SALE_MARKED_DONE).
+                  </p>
+                </div>
+              ) : activeAction.status === 'SALE_MARKED_DONE' ? (
+                <div className="p-4 bg-purple-50/70 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-bold text-purple-950 dark:text-purple-200 text-xs">
+                        Sale đã nộp xác nhận khắc phục (SALE_MARKED_DONE)
+                      </h4>
+                      <p className="text-[11px] text-purple-700 dark:text-purple-300 mt-0.5">
+                        Bấm "Bắt đầu Recheck" để chuyển trạng thái sang IN_RECHECK và mở biểu mẫu đánh giá.
+                      </p>
                     </div>
-                  )}
+                    <button
+                      onClick={handleStartRecheck}
+                      disabled={!isAssignedAuditor}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition-colors disabled:opacity-50 shrink-0 shadow-sm"
+                    >
+                      Bắt đầu Recheck (IN_RECHECK)
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Recheck execution form: active only when IN_RECHECK */
+                <div className="space-y-4 text-xs">
+                  <div className="p-2.5 rounded-lg bg-purple-100/60 dark:bg-purple-950/50 text-purple-900 dark:text-purple-200 text-[11px] font-semibold flex items-center gap-1.5 border border-purple-200 dark:border-purple-800">
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-purple-600" />
+                    <span>Action đang trong phiên kiểm tra (IN_RECHECK). Vui lòng đưa ra kết luận:</span>
+                  </div>
 
                   {/* Verdict Selection: IMPROVED vs NOT_IMPROVED */}
                   <div className="space-y-1.5">

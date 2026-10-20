@@ -942,11 +942,39 @@ export const mockAuditorAssignments: AuditorAssignment[] = [
     auditorId: 'AUD-01',
     auditorName: 'Nguyễn Thùy Linh',
     effectiveFrom: '2026-08-01',
-    effectiveTo: null,
-    assignmentReason: 'Phân công định kỳ đầu quý',
+    effectiveTo: '2026-10-26', // A: hiện hành (kết thúc trước tuần sau)
+    assignmentReason: 'Phân công A ban đầu (Hiện hành đến hết ngày 26/10)',
     createdBy: 'Phạm Đức Thắng (Head Auditor)',
     createdAt: '2026-08-01T08:00:00+07:00',
-    isActive: true,
+    isActive: true, // Today is 2026-10-20, so A is currently active
+  },
+  {
+    id: 'ASG-002-B',
+    saleId: 'SALE-02',
+    saleName: 'Lê Thu Hương',
+    teamName: 'Team B2B Miền Bắc',
+    auditorId: 'AUD-02',
+    auditorName: 'Trần Quang Huy',
+    effectiveFrom: '2026-10-27',
+    effectiveTo: '2026-11-02', // B: hiệu lực tuần sau (chuyển giao cho Huy TQ)
+    assignmentReason: 'Kế hoạch bàn giao B tuần sau (27/10 -> 02/11)',
+    createdBy: 'Phạm Đức Thắng (Head Auditor)',
+    createdAt: '2026-10-18T10:00:00+07:00',
+    isActive: false, // Future assignment (next week)
+  },
+  {
+    id: 'ASG-002-C',
+    saleId: 'SALE-02',
+    saleName: 'Lê Thu Hương',
+    teamName: 'Team B2B Miền Bắc',
+    auditorId: 'AUD-03',
+    auditorName: 'Đỗ Thu Trang',
+    effectiveFrom: '2026-11-03',
+    effectiveTo: null, // C: hiệu lực hai tuần sau (mở vô thời hạn)
+    assignmentReason: 'Phân công C chính thức dài hạn từ tuần 2 (03/11 trở đi)',
+    createdBy: 'Phạm Đức Thắng (Head Auditor)',
+    createdAt: '2026-10-19T14:00:00+07:00',
+    isActive: false, // Future assignment (two weeks later)
   },
   {
     id: 'ASG-003',

@@ -10,6 +10,8 @@ import {
 import { Badge } from '../common/Badge';
 import { Modal } from '../common/Modal';
 
+const TODAY_DATE = '2026-10-20';
+
 export const AuditorPortfolioView: React.FC = () => {
   const {
     currentUser,
@@ -308,6 +310,10 @@ export const AuditorPortfolioView: React.FC = () => {
                     {asg.isActive ? (
                       <Badge variant="success" size="xs">
                         Đang hiệu lực
+                      </Badge>
+                    ) : asg.effectiveFrom > TODAY_DATE ? (
+                      <Badge variant="info" size="xs">
+                        Sắp hiệu lực (Future)
                       </Badge>
                     ) : (
                       <Badge variant="neutral" size="xs">

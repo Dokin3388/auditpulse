@@ -27,6 +27,15 @@ import type {
 } from '../types';
 
 import {
+  canSaleMarkActionDone,
+  canAuditorStartRecheck,
+  canAuditorSubmitRecheck,
+  canHeadAuditorWaiveAction,
+  resolveAssignmentChain,
+  getEffectiveAuditorForSale as resolveAuditorForDate,
+} from './workflowRules';
+
+import {
   mockUsers,
   mockCustomers,
   mockQuotations,
@@ -78,8 +87,10 @@ export interface AuditStoreContextType {
     saleId: string,
     auditorId: string,
     effectiveFrom: string,
-    reason: string
+    reason: string,
+    effectiveTo?: string | null
   ) => { success: boolean; message: string };
+  getEffectiveAuditorForSale: (saleId: string, auditDate: string) => AuditorAssignment | undefined;
   approveIssueDefinition: (defId: string) => void;
   createAuditCaseForQueue: (
     queueItemId: string,
@@ -279,12 +290,14 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const action = correctiveActions.find((a) => a.id === actionId);
     if (!action) return { success: false, message: 'Không tìm thấy action' };
 
-    // Strict Permission Gate
-    if (currentUser.role !== 'SALE' || currentUser.saleId !== action.saleId) {
-      return {
-        success: false,
-        message: `Từ chối quyền: Chỉ Sale phụ trách (${action.saleName}) mới có quyền xác nhận đã thực hiện action này.`,
-      };
+    // Strict validation via workflowRules
+    const validation = canSaleMarkActionDone(action, currentUser);
+    if (!validation.valid) {
+      return { success: false, message: validation.error || 'Thao tác không hợp lệ' };
+    }
+
+    if (!notes || !notes.trim()) {
+      return { success: false, message: 'Ghi chú kết quả khắc phục không được để trống.' };
     }
 
     setCorrectiveActions((prev) =>
@@ -298,6 +311,7 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           saleMarkedDoneAt: new Date().toISOString(),
           saleNotes: notes,
           saleEvidenceList: updatedEvidences,
+          isOverdue: false,
         };
       })
     );
@@ -319,13 +333,10 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const action = correctiveActions.find((a) => a.id === actionId);
     if (!action) return { success: false, message: 'Không tìm thấy action' };
 
-    // Strict Permission Gate
-    const isAssigned = currentUser.role === 'AUDITOR' && currentUser.auditorId === action.auditorId;
-    if (!isAssigned) {
-      return {
-        success: false,
-        message: `Từ chối quyền: Chỉ Auditor phụ trách action (${action.auditorName}) mới có quyền bắt đầu recheck.`,
-      };
+    // Strict validation via workflowRules
+    const validation = canAuditorStartRecheck(action, currentUser);
+    if (!validation.valid) {
+      return { success: false, message: validation.error || 'Thao tác không hợp lệ' };
     }
 
     setCorrectiveActions((prev) =>
@@ -337,7 +348,7 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       `Auditor ${currentUser.name} bắt đầu kiểm tra (IN_RECHECK) action ${action.code}.`
     );
 
-    return { success: true, message: 'Đã bắt đầu kiểm tra action.' };
+    return { success: true, message: 'Đã bắt đầu kiểm tra action (IN_RECHECK).' };
   };
 
   // AUDITOR FLOW: Submit Recheck Result (Strict RBAC: Only assigned auditor)
@@ -352,13 +363,14 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const action = correctiveActions.find((a) => a.id === actionId);
     if (!action) return { success: false, message: 'Không tìm thấy action' };
 
-    // Strict Permission Gate
-    const isAssigned = currentUser.role === 'AUDITOR' && currentUser.auditorId === action.auditorId;
-    if (!isAssigned) {
-      return {
-        success: false,
-        message: `Từ chối quyền: Chỉ Auditor phụ trách action (${action.auditorName}) mới có quyền kết luận recheck.`,
-      };
+    // Strict validation via workflowRules
+    const validation = canAuditorSubmitRecheck(action, currentUser, result, nextDueDate);
+    if (!validation.valid) {
+      return { success: false, message: validation.error || 'Thao tác không hợp lệ' };
+    }
+
+    if (!notes || !notes.trim()) {
+      return { success: false, message: 'Ghi chú recheck không được để trống.' };
     }
 
     const newRecheckNumber = action.rechecks.length + 1;
@@ -402,16 +414,14 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         message: `Xác nhận cải thiện thành công! Action ${action.code} đã được đóng.`,
       };
     } else {
-      // Transitions to REOPENED per spec, requires new due date
-      const effectiveDueDate = nextDueDate || new Date(Date.now() + 2 * 86400000).toISOString();
-
+      // Transitions to REOPENED per spec, requires nextDueDate
       setCorrectiveActions((prev) =>
         prev.map((act) => {
           if (act.id !== actionId) return act;
           return {
             ...act,
             status: 'REOPENED',
-            dueDate: effectiveDueDate,
+            dueDate: nextDueDate!,
             isOverdue: false,
             saleMarkedDone: false, // Reset sale completion for reopened action
             rechecks: [...act.rechecks, recheckRecord],
@@ -423,7 +433,7 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       addTrailEvent(
         'RECHECK_NOT_IMPROVED',
         `Auditor ${currentUser.name} xác nhận NOT_IMPROVED. Mở lại (REOPENED) action ${action.code}.`,
-        `Hạn xử lý mới: ${new Date(effectiveDueDate).toLocaleDateString('vi-VN')}. Ghi chú: ${notes}`
+        `Hạn xử lý mới: ${new Date(nextDueDate!).toLocaleDateString('vi-VN')}. Ghi chú: ${notes}`
       );
 
       return {
@@ -435,12 +445,13 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // HEAD AUDITOR FLOW: Waive / Cancel Action (Strict RBAC: Head Auditor/Admin only)
   const headAuditorWaiveAction = (actionId: string, reason: string) => {
-    if (currentUser.role !== 'HEAD_AUDITOR' && currentUser.role !== 'ADMIN') {
-      return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor mới có quyền Miễn trừ/Hủy Action.' };
-    }
-
     const action = correctiveActions.find((a) => a.id === actionId);
     if (!action) return { success: false, message: 'Không tìm thấy action' };
+
+    const validation = canHeadAuditorWaiveAction(action, currentUser, reason);
+    if (!validation.valid) {
+      return { success: false, message: validation.error || 'Thao tác không hợp lệ' };
+    }
 
     setCorrectiveActions((prev) =>
       prev.map((act) => {
@@ -450,6 +461,7 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           status: 'WAIVED',
           waiveReason: reason,
           waiveApprovedBy: currentUser.name,
+          isOverdue: false,
         };
       })
     );
@@ -473,15 +485,11 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     saleId: string,
     auditorId: string,
     effectiveFrom: string,
-    reason: string
+    reason: string,
+    effectiveTo?: string | null
   ) => {
     if (currentUser.role !== 'HEAD_AUDITOR' && currentUser.role !== 'ADMIN') {
       return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có quyền điều chỉnh phân công Auditor.' };
-    }
-
-    const newEffFromDate = new Date(effectiveFrom);
-    if (isNaN(newEffFromDate.getTime())) {
-      return { success: false, message: 'Ngày hiệu lực không hợp lệ.' };
     }
 
     const sale = allUsers.find((u) => u.saleId === saleId) || mockUsers.find((u) => u.saleId === saleId);
@@ -490,60 +498,25 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const auditorName = auditor ? auditor.name : 'Auditor ' + auditorId;
     const teamName = sale?.teamName || 'B2B Team';
 
-    // Compute day before new effectiveFrom for chaining
-    const dayBefore = new Date(newEffFromDate);
-    dayBefore.setDate(dayBefore.getDate() - 1);
-    const dayBeforeStr = dayBefore.toISOString().split('T')[0];
-
-    // Check overlap with existing assignments for this sale
-    const existingForSale = auditorAssignments.filter((a) => a.saleId === saleId);
-    for (const asg of existingForSale) {
-      // If assignment has an effectiveFrom in the future relative to newEffFromDate
-      if (asg.effectiveFrom > effectiveFrom) {
-        return {
-          success: false,
-          message: `Xung đột ngày hiệu lực: Đã có phân công khác bắt đầu từ ${asg.effectiveFrom}. Một sale chỉ có đúng 1 auditor trong cùng một ngày.`,
-        };
-      }
-    }
-
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    // Update existing active assignment:
-    // Set its effectiveTo = dayBeforeStr. It remains active as long as today <= dayBeforeStr!
-    setAuditorAssignments((prev) =>
-      prev.map((asg) => {
-        if (asg.saleId === saleId && asg.isActive) {
-          const isStillCurrentlyActive = todayStr <= dayBeforeStr;
-          return {
-            ...asg,
-            effectiveTo: dayBeforeStr,
-            isActive: isStillCurrentlyActive,
-          };
-        }
-        return asg;
-      })
-    );
-
-    // New assignment is active now only if effectiveFrom <= today
-    const isNewActiveToday = effectiveFrom <= todayStr;
-
-    const newAssignment: AuditorAssignment = {
-      id: `ASG-${Date.now()}`,
+    const resolution = resolveAssignmentChain(auditorAssignments, {
       saleId,
       saleName,
       teamName,
       auditorId,
       auditorName,
       effectiveFrom,
-      effectiveTo: null,
-      assignmentReason: reason,
+      effectiveTo,
+      reason,
       createdBy: currentUser.name,
-      createdAt: new Date().toISOString(),
-      isActive: isNewActiveToday,
-    };
+    });
 
-    setAuditorAssignments((prev) => [newAssignment, ...prev]);
+    if (!resolution.success) {
+      return { success: false, message: resolution.message };
+    }
+
+    if (resolution.updatedAssignments) {
+      setAuditorAssignments(resolution.updatedAssignments);
+    }
 
     // Clear any open team change alert for this sale
     setTeamChangeAlerts((prev) =>
@@ -553,13 +526,18 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     addTrailEvent(
       'AUDITOR_ASSIGNMENT_UPDATED',
       `Head Auditor phân công sale ${saleName} cho ${auditorName}. Hiệu lực từ ${effectiveFrom}.`,
-      `Lý do: ${reason} • Phân công trước đó duy trì hiệu lực đến hết ngày ${dayBeforeStr}.`
+      `Lý do: ${reason}`
     );
 
     return {
       success: true,
-      message: `Đã phân công ${saleName} cho ${auditorName} thành công từ ngày ${effectiveFrom}. Phân công hiện tại tiếp tục hiệu lực đến hết ngày ${dayBeforeStr}.`,
+      message: resolution.message,
     };
+  };
+
+  // Effective auditor resolution helper
+  const getEffectiveAuditorForSale = (saleId: string, auditDate: string): AuditorAssignment | undefined => {
+    return resolveAuditorForDate(auditorAssignments, saleId, auditDate);
   };
 
   // SETTINGS FLOW: Approve Issue Definition
@@ -839,6 +817,7 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         auditorSubmitRecheck,
         headAuditorWaiveAction,
         createAuditorAssignment,
+        getEffectiveAuditorForSale,
         approveIssueDefinition,
         createAuditCaseForQueue,
         triggerManualSync,

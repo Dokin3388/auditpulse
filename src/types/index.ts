@@ -176,6 +176,8 @@ export type ActionStatus =
   | 'CANCELLED'
   | 'WAIVED';
 
+export type CorrectiveActionStatus = ActionStatus;
+
 export type RecheckResult = 'IMPROVED' | 'NOT_IMPROVED';
 
 export interface Recheck {
