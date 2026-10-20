@@ -10,6 +10,7 @@ import {
   FileBarChart,
   Settings,
   HelpCircle,
+  UserRoundCog,
 } from 'lucide-react';
 
 export type NavTab =
@@ -20,6 +21,7 @@ export type NavTab =
   | 'portfolio'
   | 'performance'
   | 'reports'
+  | 'assignments'
   | 'settings';
 
 interface SidebarProps {
@@ -74,6 +76,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       icon: Users2,
       badge: unreviewedTeamAlerts > 0 ? `${unreviewedTeamAlerts} đổi team` : null,
       badgeColor: 'bg-rose-500 text-white',
+    },
+    {
+      id: 'assignments' as NavTab,
+      label: 'Phân công Auditor',
+      icon: UserRoundCog,
+      badge: null,
     },
     {
       id: 'performance' as NavTab,

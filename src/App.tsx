@@ -12,6 +12,7 @@ import { AuditorPortfolioView } from './components/views/AuditorPortfolioView';
 import { AuditorPerformanceView } from './components/views/AuditorPerformanceView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
+import { AuditorAssignmentView } from './components/views/AuditorAssignmentView';
 
 const MainApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
@@ -81,6 +82,8 @@ const MainApp: React.FC = () => {
           )}
 
           {activeTab === 'portfolio' && <AuditorPortfolioView />}
+
+          {activeTab === 'assignments' && <AuditorAssignmentView />}
 
           {activeTab === 'performance' && <AuditorPerformanceView />}
 
