@@ -162,33 +162,62 @@ Hệ thống tuân thủ nghiêm ngặt các bất biến nghiệp vụ quy đ�
 
 ---
 
-## 6. Danh sách các phần đang Mock & Hướng dẫn đấu nối API / Supabase
+## 6. Kiến trúc Neon PostgreSQL & API Server (Phase 1 Ready)
 
-### A. Giới hạn của bản Mock hiện tại:
-- **In-Memory Reactive State**: Dữ liệu được lưu trong React state và bộ nhớ client; khi reload trang (F5), dữ liệu sẽ khởi tạo lại từ `mockData.ts`.
-- **Upload bằng chứng (Evidence Upload)**: Tạo object URL và snapshot metadata giả lập; chưa lưu file nhị phân lên bucket thực tế.
-- **Giả lập đồng bộ (Source Sync)**: Nút đồng bộ thủ công chạy timer 1.5s và cập nhật timestamp `lastSyncAt`.
+Hệ thống đã hoàn tất thiết lập nền tảng cơ sở dữ liệu **Neon PostgreSQL** và tầng **API Server Node.js/TypeScript**, bảo đảm phân tách hoàn toàn giữa Client và Database:
+- **Frontend Vite/React**: Giữ nguyên trạng thái mock UI phục vụ trình diễn; không kết nối trực tiếp đến Neon.
+- **Server API**: Sử dụng `express` và `pg` (Pool), truy vấn **100% Parameterized Queries** (`$1, $2, ...`), tuyệt đối không nối chuỗi SQL từ input.
+- **Biến môi trường**: Kết nối bảo mật thông qua `DATABASE_URL` trong file `.env` (được bảo vệ bởi `.gitignore`, có template mẫu tại `.env.example`).
 
-### B. Các bước chuyển đổi sang Supabase / Real REST API:
-1. **Thiết lập Database Tables**:
-   - Sử dụng các interface TypeScript trong `src/types/index.ts` để tạo schema PostgreSQL trên Supabase:
-     ```sql
-     create table audit_cases (...);
-     create table audit_issues (...);
-     create table corrective_actions (...);
-     create table auditor_assignments (...);
-     create table sales_orders (...);
-     ```
-2. **Thay thế Store Layer bằng Supabase Client / React Query**:
-   - Trong `src/services/auditStore.tsx`, thay thế các hàm `setQueueItems`, `setAuditCases`, `setActions` bằng các lời gọi:
-     - `const { data } = await supabase.from('audit_cases').insert(...)`
-     - Kích hoạt Row-Level Security (RLS) trên Supabase tương đương với các hàm kiểm tra quyền trong `auditStore.tsx`:
-       - Policy cho Sale: `auth.uid() = sale_id`
-       - Policy cho Auditor: `auth.uid() = auditor_id`
-3. **Lưu trữ Bằng chứng qua Supabase Storage**:
-   - Tích hợp `supabase.storage.from('evidence').upload(...)` bên trong `EvidencePreview.tsx` để lấy URL file thật.
-4. **Thay thế Demo Role Switcher bằng Supabase Auth**:
-   - Gắn `supabase.auth.signInWithPassword()` hoặc SSO, lấy JWT token để định danh vai trò người dùng thay cho thanh demo.
+### A. Cấu trúc Schema 6 Nhóm Bảng trên Neon:
+1. **Identity & Organization**:
+   - `teams`: Danh mục phòng ban kinh doanh B2B.
+   - `app_users`: Người dùng định danh với role chuẩn: `HEAD_AUDITOR`, `AUDITOR`, `SALE`, `TEAM_LEAD`, `ADMIN`.
+   - `sales_profiles` & `auditor_profiles`: Thông tin chuyên môn, quota, KPI đồng thuận QA.
+2. **Source Data (CRM, ERP, POS)**:
+   - `customers`: Hồ sơ khách hàng, kênh tiếp cận, sale phụ trách.
+   - `quotations`: Báo giá gửi khách, tổng tiền, trạng thái (`PENDING`, `ACCEPTED`, `EXPIRED`, `REJECTED`).
+   - `sales_orders`: Đơn hàng chốt (`VALID`, `DRAFT`, `CANCELLED`, `REFUNDED`).
+3. **Audit Core**:
+   - `issue_definitions`: Catalog định nghĩa lỗi, nhóm lỗi, severity, hard fail, rule version.
+   - `audit_queue_runs` & `audit_queue_items`: Hàng chờ audit hằng ngày, snapshot thông tin bất biến, cờ `shared_work`. Ràng buộc `UNIQUE(audit_date, customer_id)` đảm bảo 1 khách chỉ có 1 dòng queue/ngày.
+   - `audit_cases`: Hồ sơ chấm audit hoàn tất, lưu snapshot người chấm, sale, team, rule version.
+   - `audit_issues`: Danh sách lỗi vi phạm kèm bằng chứng và ghi chú.
+4. **Workflow & Khắc phục**:
+   - `corrective_actions`: Giao việc sửa lỗi, SLA deadline, tiêu chuẩn nghiệm thu. **Ràng buộc chống trùng lặp cấp cơ sở dữ liệu**: Partial Unique Index `idx_prevent_duplicate_active_action` trên `(customer_id, issue_code)` với trạng thái `OPEN`, `SALE_MARKED_DONE`, `IN_RECHECK`, `REOPENED`.
+   - `rechecks`: Lịch sử các lần auditor kiểm tra lại, kết luận `IMPROVED` / `NOT_IMPROVED`.
+   - `evidences`: Chỉ lưu metadata và URL file/ảnh, không lưu binary blob trong database.
+5. **Operations**:
+   - `auditor_assignments`: Lịch sử phân công auditor theo ngày hiệu lực. **Ràng buộc toán học chống overlap cấp cơ sở dữ liệu**: PostgreSQL Extension `btree_gist` Exclusion Constraint `exclude_overlapping_auditor_assignments` chặn mọi khoảng ngày giao nhau trên cùng một sale.
+   - `audit_trail_events`: Nhật ký audit trail hệ thống bất biến.
+   - `source_sync_logs`: Lịch sử đồng bộ 4 nguồn dữ liệu.
+6. **Reporting**:
+   - `rescued_orders`: Bảng lưu vết đơn hàng phục hồi.
+   - `v_rescued_orders_attribution`: SQL View tự động tính toán động đơn cứu được có gắn nhãn `AUDIT_ASSISTED` / `SALE_SELF_RESOLVED` trong attribution window 30 ngày.
+
+### B. Hướng dẫn Lệnh Quản trị Database & Backend:
+
+```bash
+# 1. Thiết lập biến môi trường (copy từ .env.example)
+cp .env.example .env
+# Chỉnh sửa DATABASE_URL thành chuỗi kết nối Neon của bạn
+
+# 2. Chạy Migration tạo schema trên Neon PostgreSQL
+npm run db:migrate
+
+# 3. Nạp dữ liệu mẫu (Seeding) từ bộ mock data chuẩn spec
+npm run db:seed
+
+# 4. Rollback migration gần nhất (khi cần hoàn tác)
+npm run db:rollback
+
+# 5. Khởi động API Server Node.js/TypeScript độc lập
+npm run server
+# API lắng nghe tại http://localhost:3001
+
+# 6. Chạy toàn bộ Test Suite (11 unit & integration tests)
+npm test
+```
 
 ---
 
