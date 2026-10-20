@@ -1,22 +1,15 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
 import {
-  TrendingUp,
   ShieldCheck,
-  CheckCircle2,
-  Clock,
   Sparkles,
   DollarSign,
-  AlertCircle,
   HelpCircle,
-  BarChart3,
-  Award,
-  Layers,
 } from 'lucide-react';
 import { Badge, AttributionBadge } from '../common/Badge';
 
 export const AuditorPerformanceView: React.FC = () => {
-  const { performanceMetrics, rescuedOrders, currentUser } = useAuditStore();
+  const { performanceMetrics, rescuedOrders } = useAuditStore();
   const [selectedAuditorId, setSelectedAuditorId] = useState<string>('ALL');
 
   const filteredMetrics =

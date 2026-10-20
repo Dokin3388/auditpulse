@@ -1,24 +1,15 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
 import {
-  FileBarChart,
-  Filter,
-  Download,
-  Calendar,
-  Layers,
   Sparkles,
   ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  TrendingUp,
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 
 export const ReportsView: React.FC = () => {
-  const { queueItems, correctiveActions, rescuedOrders, performanceMetrics } = useAuditStore();
+  const { queueItems, correctiveActions, rescuedOrders } = useAuditStore();
 
   const [dateRange, setDateRange] = useState('OCT_2026');
-  const [selectedTeam, setSelectedTeam] = useState('ALL');
 
   // Execution KPIs
   const totalQueue = queueItems.length;

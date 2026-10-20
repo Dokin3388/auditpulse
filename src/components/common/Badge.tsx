@@ -1,5 +1,5 @@
 import React from 'react';
-import { IssueSeverity, RescuedAttribution } from '../../types';
+import type { IssueSeverity, RescuedAttribution } from '../../types';
 
 interface BadgeProps {
   children: React.ReactNode;

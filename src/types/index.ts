@@ -128,6 +128,7 @@ export interface Evidence {
 
 export interface AuditIssue {
   id: string;
+  caseId: string;
   issueCode: string;
   issueName: string;
   groupName: string;
@@ -135,6 +136,7 @@ export interface AuditIssue {
   hardFail: boolean;
   notes: string;
   evidenceIds: string[];
+  evidenceList?: Evidence[];
   correctiveActionId?: string;
 }
 
@@ -154,10 +156,15 @@ export interface AuditCase {
   voidReason?: string;
   voidApprovedBy?: string;
   // Snapshots at creation time
+  snapshotCustomerId: string;
+  snapshotCustomerName: string;
   snapshotSaleId: string;
   snapshotSaleName: string;
   snapshotTeamId: string;
   snapshotTeamName: string;
+  snapshotAuditorId: string;
+  snapshotAuditorName: string;
+  ruleVersion?: string;
 }
 
 export type ActionStatus =

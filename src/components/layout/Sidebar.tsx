@@ -9,7 +9,6 @@ import {
   TrendingUp,
   FileBarChart,
   Settings,
-  AlertCircle,
   HelpCircle,
 } from 'lucide-react';
 

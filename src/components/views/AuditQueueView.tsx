@@ -1,19 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useAuditStore } from '../../services/auditStore';
-import { AuditQueueItem, RiskTagCode, QueueItemStatus } from '../../types';
+import type { AuditQueueItem } from '../../types';
 import {
-  Layers,
-  Filter,
   Search,
   RotateCcw,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Shield,
   UserCheck,
   ChevronRight,
-  AlertCircle,
-  ExternalLink,
 } from 'lucide-react';
 import { Badge, QueueStatusBadge, RiskTagBadge } from '../common/Badge';
 import { EmptyState } from '../common/EmptyState';

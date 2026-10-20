@@ -3,17 +3,13 @@ import { useAuditStore } from '../../services/auditStore';
 import {
   Clock,
   AlertTriangle,
-  CheckCircle2,
-  Filter,
   Search,
   ArrowRight,
-  ShieldCheck,
-  Building,
   User,
 } from 'lucide-react';
-import { Badge, ActionStatusBadge, SeverityBadge } from '../common/Badge';
+import { ActionStatusBadge, SeverityBadge } from '../common/Badge';
 import { EmptyState } from '../common/EmptyState';
-import { NavTab } from '../layout/Sidebar';
+import type { NavTab } from '../layout/Sidebar';
 
 interface RecheckTodayViewProps {
   onSelectAction: (actionId: string) => void;
@@ -24,7 +20,7 @@ export const RecheckTodayView: React.FC<RecheckTodayViewProps> = ({
   onSelectAction,
   onNavigate,
 }) => {
-  const { filteredActions, currentUser } = useAuditStore();
+  const { filteredActions } = useAuditStore();
 
   const [filterSeverity, setFilterSeverity] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');

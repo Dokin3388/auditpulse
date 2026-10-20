@@ -6,19 +6,15 @@ import {
   Sun,
   Database,
   Bell,
-  Search,
-  CheckCircle2,
-  AlertTriangle,
 } from 'lucide-react';
 
 interface NavbarProps {
   darkMode: boolean;
   setDarkMode: (val: boolean) => void;
-  onOpenQuickAudit?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ darkMode, setDarkMode }) => {
-  const { currentUser, filteredActions, teamChangeAlerts } = useAuditStore();
+  const { currentUser, filteredActions } = useAuditStore();
 
   const urgentRecheckCount = filteredActions.filter(
     (a) => a.status === 'SALE_MARKED_DONE' || a.isOverdue

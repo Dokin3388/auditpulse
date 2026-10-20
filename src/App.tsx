@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { AuditProvider, useAuditStore } from './services/auditStore';
+import { AuditProvider } from './services/auditStore';
 import { RoleSwitcherBar } from './components/layout/RoleSwitcherBar';
 import { Navbar } from './components/layout/Navbar';
-import { Sidebar, NavTab } from './components/layout/Sidebar';
+import { Sidebar } from './components/layout/Sidebar';
+import type { NavTab } from './components/layout/Sidebar';
 import { DashboardView } from './components/views/DashboardView';
 import { AuditQueueView } from './components/views/AuditQueueView';
 import { SaleActionDetailView } from './components/views/SaleActionDetailView';

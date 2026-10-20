@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
 import {
-  Users2,
-  UserCheck,
   AlertTriangle,
   History,
   Plus,
-  ArrowRight,
-  ShieldAlert,
-  Calendar,
   CheckCircle2,
   Lock,
 } from 'lucide-react';

@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
-import { CorrectiveAction, Evidence, RecheckResult } from '../../types';
+import type { Evidence, RecheckResult } from '../../types';
 import {
-  CheckSquare,
-  Clock,
   AlertTriangle,
   User,
   Building,
@@ -11,11 +9,8 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
-  ArrowRight,
   Send,
-  Calendar,
   Lock,
-  FileCheck,
 } from 'lucide-react';
 import {
   Badge,
@@ -73,8 +68,9 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     text: string;
   } | null>(null);
 
-  const isSaleRole = currentUser.role === 'SALE';
-  const isAuditorRole = currentUser.role === 'AUDITOR' || currentUser.role === 'HEAD_AUDITOR';
+  // Strict permission checks
+  const isSaleOwner = currentUser.role === 'SALE' && currentUser.saleId === activeAction?.saleId;
+  const isAssignedAuditor = currentUser.role === 'AUDITOR' && currentUser.auditorId === activeAction?.auditorId;
   const isHeadAuditor = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
 
   // Handlers
@@ -98,6 +94,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     const res = auditorStartRecheck(activeAction.id);
     if (res.success) {
       setStatusMessage({ type: 'success', text: res.message });
+    } else {
+      setStatusMessage({ type: 'error', text: res.message });
     }
   };
 
@@ -350,6 +348,16 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 )}
               </div>
 
+              {/* RBAC notice if current user is not the sale owner */}
+              {!isSaleOwner && !activeAction.saleMarkedDone && (
+                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5 border border-amber-200/80 dark:border-amber-800/60">
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                  <span>
+                    Chỉ Sale phụ trách (<strong>{activeAction.saleName}</strong>) mới có quyền gửi xác nhận khắc phục.
+                  </span>
+                </div>
+              )}
+
               {activeAction.saleMarkedDone ? (
                 /* Display Submitted Sale Data */
                 <div className="space-y-3 text-xs">
@@ -382,11 +390,12 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 /* Sale submission form */
                 <form onSubmit={handleSaleSubmit} className="space-y-3.5 text-xs">
                   {/* Checkbox "Tôi đã thực hiện" strictly required per spec */}
-                  <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-amber-500 transition-colors">
+                  <label className={`flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors ${isSaleOwner ? 'cursor-pointer hover:border-amber-500' : 'opacity-60 cursor-not-allowed'}`}>
                     <input
                       type="checkbox"
                       checked={saleChecked}
                       onChange={(e) => setSaleChecked(e.target.checked)}
+                      disabled={!isSaleOwner}
                       className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                     />
                     <div>
@@ -408,20 +417,21 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       placeholder="VD: Đã gọi lại khách làm rõ bảo hành, chốt lịch ký HĐ..."
                       value={saleNotes}
                       onChange={(e) => setSaleNotes(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-amber-500"
+                      disabled={!isSaleOwner}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
                     />
                   </div>
 
                   <EvidencePreview
                     evidenceList={saleEvidences}
-                    allowAdd={true}
+                    allowAdd={isSaleOwner}
                     onAddEvidence={(evi) => setSaleEvidences([...saleEvidences, evi])}
                     title="Tải lên Bằng chứng (Ảnh/PDF/Link)"
                   />
 
                   <button
                     type="submit"
-                    disabled={!saleChecked || !saleNotes.trim()}
+                    disabled={!isSaleOwner || !saleChecked || !saleNotes.trim()}
                     className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
                   >
                     <Send className="w-3.5 h-3.5" />
@@ -453,6 +463,16 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 </Badge>
               </div>
 
+              {/* RBAC notice if current user is not assigned auditor */}
+              {!isAssignedAuditor && activeAction.status !== 'VERIFIED_CLOSED' && (
+                <div className="p-2.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 text-xs flex items-center gap-1.5 border border-purple-200/80 dark:border-purple-800/60">
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-purple-600" />
+                  <span>
+                    Chỉ Auditor phụ trách (<strong>{activeAction.auditorName}</strong>) mới có quyền thực hiện recheck.
+                  </span>
+                </div>
+              )}
+
               {/* Closed status display */}
               {activeAction.status === 'VERIFIED_CLOSED' ? (
                 <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-center space-y-2">
@@ -475,7 +495,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       </span>
                       <button
                         onClick={handleStartRecheck}
-                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors"
+                        disabled={!isAssignedAuditor}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors disabled:opacity-50"
                       >
                         Bắt đầu Recheck
                       </button>
@@ -491,7 +512,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setRecheckVerdict('IMPROVED')}
-                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                        disabled={!isAssignedAuditor}
+                        className={`p-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${
                           recheckVerdict === 'IMPROVED'
                             ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold dark:bg-emerald-950/60 dark:text-emerald-300'
                             : 'border-slate-200 dark:border-slate-800 text-slate-600'
@@ -509,7 +531,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setRecheckVerdict('NOT_IMPROVED')}
-                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                        disabled={!isAssignedAuditor}
+                        className={`p-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${
                           recheckVerdict === 'NOT_IMPROVED'
                             ? 'bg-rose-50 border-rose-500 text-rose-800 font-bold dark:bg-rose-950/60 dark:text-rose-300'
                             : 'border-slate-200 dark:border-slate-800 text-slate-600'
@@ -536,6 +559,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                         type="date"
                         value={nextDueDate}
                         onChange={(e) => setNextDueDate(e.target.value)}
+                        disabled={!isAssignedAuditor}
                         className="w-full p-2 rounded-lg border border-rose-300 dark:bg-slate-800 text-xs font-semibold"
                       />
                     </div>
@@ -550,13 +574,14 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       placeholder="Ghi rõ bằng chứng kiểm tra, lý do đạt hoặc chưa đạt..."
                       value={recheckNotes}
                       onChange={(e) => setRecheckNotes(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-purple-500"
+                      disabled={!isAssignedAuditor}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
                     />
                   </div>
 
                   <EvidencePreview
                     evidenceList={auditorEvidences}
-                    allowAdd={true}
+                    allowAdd={isAssignedAuditor}
                     onAddEvidence={(evi) => setAuditorEvidences([...auditorEvidences, evi])}
                     title="Bằng chứng Recheck của Auditor"
                   />
@@ -564,7 +589,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   <button
                     type="button"
                     onClick={handleAuditorSubmit}
-                    disabled={!recheckNotes.trim()}
+                    disabled={!isAssignedAuditor || !recheckNotes.trim()}
                     className={`w-full py-2.5 text-white font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50 ${
                       recheckVerdict === 'IMPROVED'
                         ? 'bg-emerald-600 hover:bg-emerald-500'

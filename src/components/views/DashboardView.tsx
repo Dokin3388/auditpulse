@@ -6,16 +6,13 @@ import {
   Clock,
   CheckCircle2,
   TrendingUp,
-  ArrowUpRight,
-  DollarSign,
-  Users,
   ChevronRight,
   Layers,
   Sparkles,
 } from 'lucide-react';
-import { Badge, ActionStatusBadge, RiskTagBadge, AttributionBadge } from '../common/Badge';
+import { Badge, RiskTagBadge, AttributionBadge } from '../common/Badge';
 import { TimelineTrail } from '../common/TimelineTrail';
-import { NavTab } from '../layout/Sidebar';
+import type { NavTab } from '../layout/Sidebar';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -180,7 +177,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
             <span>Tổng action mở: {filteredActions.filter((a) => a.status !== 'VERIFIED_CLOSED').length}</span>
             <button
-              onClick={() => onNavigate('action-detail')}
+              onClick={() => {
+                if (onSelectAction && overdueActions.length > 0) {
+                  onSelectAction(overdueActions[0].id);
+                }
+                onNavigate('action-detail');
+              }}
               className="text-rose-600 dark:text-rose-400 font-semibold hover:underline flex items-center gap-0.5"
             >
               Xử lý ngay <ChevronRight className="w-3 h-3" />

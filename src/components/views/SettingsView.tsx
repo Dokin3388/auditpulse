@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
 import {
-  Settings,
   Database,
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
   Shield,
-  Layers,
   Clock,
   Lock,
-  Sparkles,
 } from 'lucide-react';
 import { Badge, SeverityBadge } from '../common/Badge';
 

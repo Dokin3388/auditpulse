@@ -1,6 +1,6 @@
 import React from 'react';
-import { AuditTrailEvent } from '../../types';
-import { Clock, Shield, CheckCircle2, AlertTriangle, ArrowRight, UserCheck } from 'lucide-react';
+import type { AuditTrailEvent } from '../../types';
+import { Clock, CheckCircle2, AlertTriangle, ArrowRight, UserCheck } from 'lucide-react';
 import { Badge } from './Badge';
 
 interface TimelineTrailProps {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuditStore } from '../../services/auditStore';
-import { ShieldCheck, UserCheck, Users, Briefcase, Eye } from 'lucide-react';
+import { Eye } from 'lucide-react';
 
 export const RoleSwitcherBar: React.FC = () => {
   const { currentUser, allUsers, switchUser } = useAuditStore();

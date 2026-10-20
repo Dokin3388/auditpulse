@@ -115,21 +115,81 @@ d:\Webapp Audit/
 
 ---
 
-## 5. Danh sách các phần đang Mock & Hướng dẫn đấu nối API thật
+## 5. Các Ràng buộc Nghiệp vụ Cốt lõi Đã Chuẩn hóa (Business Workflow Invariants)
 
-Tất cả logic nghiệp vụ, trạng thái và dữ liệu được đóng gói độc lập trong `src/types/index.ts` và `src/services/auditStore.tsx`. Khi chuyển sang backend thực tế (ví dụ: REST API, FastAPI, NestJS hoặc Supabase):
+Hệ thống tuân thủ nghiêm ngặt 5 bất biến nghiệp vụ quy định trong **AuditFlow Operating Specification v1.1**:
 
-1. **Thay thế In-memory State bằng React Query / SWR**:
-   - `useAuditStore` hiện tại quản lý state reactive trong bộ nhớ. Bạn có thể thay thế các hàm `fetch` trong `AuditProvider` bằng các hook `useQuery(['queue', filters])` và `useMutation`.
-2. **Đấu nối Supabase / PostgreSQL**:
-   - Schema trong `src/types/index.ts` đã ánh xạ 1:1 với các bảng trong Operating Specification: `audit_queue_item`, `audit_case`, `audit_issue`, `issue_definition`, `corrective_action`, `recheck`, `auditor_assignment`, `evidence`.
-   - File upload: Thay thế hàm tạo mock Evidence trong `EvidencePreview.tsx` bằng upload lên Supabase Storage hoặc AWS S3/Cloud Storage, lưu URL vào bảng `evidence`.
-3. **Xác thực người dùng (Auth)**:
-   - Thay thế `allUsers` và `currentUser` bằng JWT session / Supabase Auth (`supabase.auth.getUser()`).
+1. **Lưu trữ Audit Case Bất biến (Immutable Audit Case & Issues Snapshot)**:
+   - Khi hoàn tất chấm điểm queue, hệ thống tạo một thực thể `AuditCase` bất biến kèm theo snapshot ngữ cảnh tại thời điểm chấm: `snapshotCustomerId`, `snapshotCustomerName`, `snapshotSaleId`, `snapshotTeamId`, `snapshotAuditorId`, `ruleVersion`.
+   - Danh sách vi phạm được lưu thành các bản ghi `AuditIssue` riêng biệt với đầy đủ mã lỗi, tên lỗi, mức độ nghiêm trọng (`severity`), cờ `hardFail`, ghi chú và bằng chứng.
+   - Các `CorrectiveAction` sinh ra tham chiếu chính xác đến `caseId` và `issueId` tương ứng.
+
+2. **Chống Tạo Action Trùng Lặp (Anti-duplicate Action Guarantee)**:
+   - Trước khi tạo action mới, hệ thống tự động kiểm tra cặp `customerId + issueCode`.
+   - Nếu đã tồn tại action ở một trong các trạng thái đang mở (`OPEN`, `SALE_MARKED_DONE`, `IN_RECHECK`, `REOPENED`), hệ thống chặn tạo action trùng lặp, tự động liên kết queue item với action cũ qua `activeActionId` và hiển thị trạng thái `Đang theo dõi`.
+
+3. **Phân công Auditor Theo Ngày Hiệu Lực (Effective-date Assignment Resolution)**:
+   - Không đóng assignment hiện tại nếu phân công mới có ngày hiệu lực ở tương lai (`effectiveFrom > today`).
+   - Assignment hợp lệ được phân giải chính xác theo ngày chạy queue: `effective_from <= audit_date` và (`effective_to` rỗng hoặc `>= audit_date`).
+   - Chặn overlap: Một sale chỉ có duy nhất một auditor hiệu lực trong cùng một ngày.
+   - Queue đã tạo giữ nguyên `assignedAuditorId` dạng snapshot lịch sử, không bị ghi đè khi có phân công mới.
+
+4. **Đo lường KPI "Đơn Cứu Được" Chuẩn Xác (Data-grounded Rescued Orders Attribution)**:
+   - Loại bỏ hoàn toàn việc tăng giá trị doanh thu cứu được bằng số hard-code khi auditor duyệt đóng action.
+   - Ghi nhận `AUDIT_ASSISTED` chỉ khi phát hiện bản ghi `SalesOrder` hợp lệ (`VALID`, không bị hủy/hoàn), phát sinh sau thời điểm tạo action (`actionCreatedAt`) và nằm trong attribution window (30 ngày).
+   - Khử trùng lặp: Mỗi khách hàng / nhóm action chỉ được tính đơn cứu một lần trong chu kỳ.
+   - Chỉ số hiệu suất auditor được tính toán động (dynamically derived) trực tiếp từ danh sách đơn hàng thực tế thỏa mãn điều kiện.
+
+5. **Siết Chặt Phân Quyền Tại Tầng Nghiệp Vụ (Strict RBAC in Store/Service Layer)**:
+   - Validation quyền hạn được đóng gói hoàn toàn tại store layer (`auditStore.tsx`), UI chỉ đóng vai trò hiển thị:
+     - `saleMarkActionDone`: Chỉ Sale sở hữu action mới có quyền thực hiện.
+     - `auditorStartRecheck` và `auditorSubmitRecheck`: Chỉ Auditor được phân công phụ trách action mới có quyền thao tác.
+     - `createAuditCaseForQueue`: Chỉ Auditor phụ trách queue item hoặc Head Auditor mới có quyền chấm case.
+     - `reassignQueueItem`, `createAuditorAssignment`, `headAuditorWaiveAction`, `triggerManualSync`: Giới hạn độc quyền cho Head Auditor / Admin.
 
 ---
 
-## 6. Hướng dẫn kịch bản Demo & Kiểm thử (UAT)
+## 6. Danh sách các phần đang Mock & Hướng dẫn đấu nối API / Supabase
+
+### A. Giới hạn của bản Mock hiện tại:
+- **In-Memory Reactive State**: Dữ liệu được lưu trong React state và bộ nhớ client; khi reload trang (F5), dữ liệu sẽ khởi tạo lại từ `mockData.ts`.
+- **Upload bằng chứng (Evidence Upload)**: Tạo object URL và snapshot metadata giả lập; chưa lưu file nhị phân lên bucket thực tế.
+- **Giả lập đồng bộ (Source Sync)**: Nút đồng bộ thủ công chạy timer 1.5s và cập nhật timestamp `lastSyncAt`.
+
+### B. Các bước chuyển đổi sang Supabase / Real REST API:
+1. **Thiết lập Database Tables**:
+   - Sử dụng các interface TypeScript trong `src/types/index.ts` để tạo schema PostgreSQL trên Supabase:
+     ```sql
+     create table audit_cases (...);
+     create table audit_issues (...);
+     create table corrective_actions (...);
+     create table auditor_assignments (...);
+     create table sales_orders (...);
+     ```
+2. **Thay thế Store Layer bằng Supabase Client / React Query**:
+   - Trong `src/services/auditStore.tsx`, thay thế các hàm `setQueueItems`, `setAuditCases`, `setActions` bằng các lời gọi:
+     - `const { data } = await supabase.from('audit_cases').insert(...)`
+     - Kích hoạt Row-Level Security (RLS) trên Supabase tương đương với các hàm kiểm tra quyền trong `auditStore.tsx`:
+       - Policy cho Sale: `auth.uid() = sale_id`
+       - Policy cho Auditor: `auth.uid() = auditor_id`
+3. **Lưu trữ Bằng chứng qua Supabase Storage**:
+   - Tích hợp `supabase.storage.from('evidence').upload(...)` bên trong `EvidencePreview.tsx` để lấy URL file thật.
+4. **Thay thế Demo Role Switcher bằng Supabase Auth**:
+   - Gắn `supabase.auth.signInWithPassword()` hoặc SSO, lấy JWT token để định danh vai trò người dùng thay cho thanh demo.
+
+---
+
+## 7. CI/CD & Quality Gate
+
+Dự án tích hợp GitHub Actions workflow tại `.github/workflows/ci.yml`:
+- Tự động chạy kiểm tra trên mỗi lần `push` và `pull_request` vào nhánh `main`.
+- Thực thi kiểm tra chất lượng code nghiêm ngặt:
+  - `npm run lint` (Oxlint / ESLint validation)
+  - `npm run build` (TypeScript type checking và đóng gói production bundle Vite)
+
+---
+
+## 8. Hướng dẫn kịch bản Demo & Kiểm thử (UAT)
 
 1. **Kịch bản Khách hàng đa tag & Báo giá chưa chốt**:
    - Vào menu **Audit Queue**, thấy dòng đầu tiên *"Công ty CP Kỹ thuật Hoàng Phát"* có 2 tag: `Khách hôm qua` và `Chưa báo giá 2 ngày`.

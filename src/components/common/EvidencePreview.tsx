@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Evidence } from '../../types';
-import { FileText, Image as ImageIcon, ExternalLink, X, Download, ShieldCheck, Clock, User } from 'lucide-react';
-import { Badge } from './Badge';
+import type { Evidence } from '../../types';
+import { FileText, Image as ImageIcon, ExternalLink, X, ShieldCheck, Clock, User } from 'lucide-react';
 
 interface EvidencePreviewProps {
   evidenceList: Evidence[];

@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
-import { AuditQueueItem, IssueDefinition, Evidence } from '../../types';
+import type { AuditQueueItem, Evidence } from '../../types';
 import { Modal } from '../common/Modal';
-import { Badge, RiskTagBadge, SeverityBadge } from '../common/Badge';
+import { RiskTagBadge, SeverityBadge } from '../common/Badge';
 import { EvidencePreview } from '../common/EvidencePreview';
 import {
-  FileText,
   Clock,
   Phone,
   User,
@@ -13,9 +12,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  FileCheck,
   Send,
-  HelpCircle,
+  Lock,
 } from 'lucide-react';
 
 interface AuditCaseDetailModalProps {
@@ -53,6 +51,12 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
   const customerQuotes = quotations.filter((q) => q.customerId === queueItem.customerId);
   const customerOrders = salesOrders.filter((o) => o.customerId === queueItem.customerId);
 
+  // Check role permission
+  const isAssignedAuditor =
+    currentUser.role === 'AUDITOR' && currentUser.auditorId === queueItem.assignedAuditorId;
+  const isHeadOrAdmin = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
+  const canAudit = isAssignedAuditor || isHeadOrAdmin;
+
   // Toggle issue selection
   const handleToggleIssue = (code: string) => {
     setSelectedIssueCodes((prev) =>
@@ -68,7 +72,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
     setIsSubmitting(true);
     setFeedbackMsg(null);
 
-    // Call store
+    // Call store (strict permission and anti-duplicate check inside)
     const result = createAuditCaseForQueue(
       queueItem.id,
       selectedIssueCodes,
@@ -81,7 +85,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
       setFeedbackMsg({ type: 'success', text: result.message });
       setTimeout(() => {
         onClose();
-      }, 1400);
+      }, 1500);
     } else {
       setFeedbackMsg({ type: 'error', text: result.message });
     }
@@ -112,6 +116,17 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
               <AlertTriangle className="w-4 h-4 text-rose-600" />
             )}
             {feedbackMsg.text}
+          </div>
+        )}
+
+        {/* Permission Denied Notice if current user cannot audit this item */}
+        {!canAudit && (
+          <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl p-3 flex items-center gap-2 text-xs text-rose-800 dark:text-rose-200">
+            <Lock className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              <strong>Giới hạn quyền:</strong> Bạn đang đăng nhập với vai trò <strong>{currentUser.name}</strong> ({currentUser.role}). 
+              Chỉ <strong>{queueItem.assignedAuditorName || 'Auditor được phân công'}</strong> hoặc Head Auditor mới có quyền chấm case này.
+            </span>
           </div>
         )}
 
@@ -254,6 +269,17 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
               ))}
             </div>
           )}
+
+          {customerOrders.length > 0 && (
+            <div className="pt-2 text-xs text-slate-500">
+              <span>Đơn hàng đã ghi nhận ({customerOrders.length} đơn): </span>
+              {customerOrders.map((o) => (
+                <span key={o.id} className="font-mono text-emerald-600 font-semibold mr-2">
+                  {o.code} ({o.totalAmount.toLocaleString('vi-VN')} ₫ - {o.status})
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 4. Issue Checklist from Issue Catalog (Spec Section 5 & 6) */}
@@ -283,6 +309,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => handleToggleIssue(def.issueCode)}
+                    disabled={!canAudit}
                     className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   <div className="flex-1 text-xs">
@@ -317,14 +344,15 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
             placeholder="Ghi rõ hành động sale cần thực hiện, tiêu chí nghiệm thu và deadline..."
             value={generalNotes}
             onChange={(e) => setGeneralNotes(e.target.value)}
-            className="w-full text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            disabled={!canAudit}
+            className="w-full text-xs p-3 rounded-xl border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
           />
         </div>
 
         {/* 6. Evidence attachments */}
         <EvidencePreview
           evidenceList={evidences}
-          allowAdd={true}
+          allowAdd={canAudit}
           onAddEvidence={handleAddEvidence}
           title="Bằng chứng sai phạm phát hiện (Evidence)"
         />
@@ -354,8 +382,8 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
             <button
               type="button"
               onClick={handleCompleteAudit}
-              disabled={isSubmitting}
-              className={`px-5 py-2 text-xs font-bold rounded-xl text-white shadow-sm flex items-center gap-1.5 transition-colors ${
+              disabled={isSubmitting || !canAudit}
+              className={`px-5 py-2 text-xs font-bold rounded-xl text-white shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50 ${
                 isPass
                   ? 'bg-emerald-600 hover:bg-emerald-500'
                   : 'bg-rose-600 hover:bg-rose-500'
