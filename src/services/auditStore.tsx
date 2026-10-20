@@ -90,6 +90,12 @@ export interface AuditStoreContextType {
     reason: string,
     effectiveTo?: string | null
   ) => { success: boolean; message: string };
+  createAuditorAssignments: (
+    saleIds: string[],
+    auditorId: string,
+    effectiveFrom: string,
+    reason: string
+  ) => { success: boolean; message: string };
   getEffectiveAuditorForSale: (saleId: string, auditDate: string) => AuditorAssignment | undefined;
   approveIssueDefinition: (defId: string) => void;
   createAuditCaseForQueue: (
@@ -535,6 +541,73 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   };
 
+  // HEAD AUDITOR / ADMIN FLOW: rotate a portfolio in one atomic UI operation.
+  // A rotation keeps prior ownership as history; it never overwrites assignments.
+  const createAuditorAssignments = (
+    saleIds: string[],
+    auditorId: string,
+    effectiveFrom: string,
+    reason: string
+  ) => {
+    if (currentUser.role !== 'HEAD_AUDITOR' && currentUser.role !== 'ADMIN') {
+      return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có thể xoay vòng portfolio.' };
+    }
+
+    const uniqueSaleIds = [...new Set(saleIds)];
+    if (!uniqueSaleIds.length) {
+      return { success: false, message: 'Hãy chọn ít nhất một sale để phân công.' };
+    }
+    if (!reason.trim()) {
+      return { success: false, message: 'Bắt buộc ghi lý do phân công/luân chuyển để lưu audit trail.' };
+    }
+
+    const auditor = allUsers.find((user) => user.auditorId === auditorId);
+    if (!auditor) {
+      return { success: false, message: 'Không tìm thấy Auditor được chọn.' };
+    }
+
+    let plannedAssignments = auditorAssignments;
+    for (const saleId of uniqueSaleIds) {
+      const sale = allUsers.find((user) => user.saleId === saleId);
+      if (!sale) {
+        return { success: false, message: `Không tìm thấy sale ${saleId}; không có thay đổi nào được lưu.` };
+      }
+
+      const resolution = resolveAssignmentChain(plannedAssignments, {
+        saleId,
+        saleName: sale.name,
+        teamName: sale.teamName || 'Chưa có team',
+        auditorId,
+        auditorName: auditor.name,
+        effectiveFrom,
+        reason,
+        createdBy: currentUser.name,
+      });
+
+      if (!resolution.success || !resolution.updatedAssignments) {
+        return { success: false, message: `${sale.name}: ${resolution.message} Không có thay đổi nào được lưu.` };
+      }
+      plannedAssignments = resolution.updatedAssignments;
+    }
+
+    setAuditorAssignments(plannedAssignments);
+    setTeamChangeAlerts((previous) =>
+      previous.map((alert) =>
+        uniqueSaleIds.includes(alert.saleId) ? { ...alert, reviewed: true } : alert
+      )
+    );
+    addTrailEvent(
+      'AUDITOR_PORTFOLIO_ROTATED',
+      `Head Auditor phân công ${uniqueSaleIds.length} sale cho ${auditor.name}, hiệu lực từ ${effectiveFrom}.`,
+      `Lý do: ${reason}. Sale: ${uniqueSaleIds.join(', ')}`
+    );
+
+    return {
+      success: true,
+      message: `Đã lưu phân công cho ${uniqueSaleIds.length} sale. Phân công cũ được chốt tự động đến ngày trước ${effectiveFrom}.`,
+    };
+  };
+
   // Effective auditor resolution helper
   const getEffectiveAuditorForSale = (saleId: string, auditDate: string): AuditorAssignment | undefined => {
     return resolveAuditorForDate(auditorAssignments, saleId, auditDate);
@@ -817,6 +890,7 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         auditorSubmitRecheck,
         headAuditorWaiveAction,
         createAuditorAssignment,
+        createAuditorAssignments,
         getEffectiveAuditorForSale,
         approveIssueDefinition,
         createAuditCaseForQueue,
