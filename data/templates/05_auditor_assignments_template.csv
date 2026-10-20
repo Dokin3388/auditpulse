@@ -1,0 +1,14 @@
+# TEMPLATE IMPORT: AUDITOR ASSIGNMENTS (PHÂN CÔNG AUDITOR PHỤ TRÁCH SALE)
+# Cột bắt buộc (*): sale_code*, auditor_code*, effective_from*, assignment_reason*
+# RÀNG BUỘC NGHIỆP VỤ:
+# - Một sale không được có hai auditor hiệu lực trong cùng bất kỳ ngày nào (chống overlap).
+# - effective_from: Định dạng YYYY-MM-DD
+# - effective_to: Định dạng YYYY-MM-DD (để trống nếu là phân công mở vô thời hạn)
+# - Không thể có 2 phân công vô thời hạn (effective_to để trống) cùng mở cho 1 sale.
+sale_code,auditor_code,effective_from,effective_to,assignment_reason
+SALE-01,AUD-01,2026-10-01,,Phân công portfolio định kỳ Q4
+SALE-02,AUD-01,2026-10-01,,Phân công portfolio định kỳ Q4
+SALE-03,AUD-02,2026-10-01,,Phân công portfolio định kỳ Q4
+SALE-04,AUD-02,2026-10-01,,Phân công portfolio định kỳ Q4
+SALE-05,AUD-03,2026-10-01,,Phân công portfolio định kỳ Q4
+SALE-06,AUD-03,2026-10-01,,Phân công portfolio định kỳ Q4

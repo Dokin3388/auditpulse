@@ -1,0 +1,13 @@
+# NGUỒN VẬN HÀNH: DANH SÁCH BÁO GIÁ (ERP MAPPING SAMPLE - 30-60 NGÀY GẦN NHẤT)
+# Cột bắt buộc (*): quote_code*, customer_code*, sale_code*, quote_date*, total_amount*, status*
+# status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REJECTED'
+# total_amount: Giá trị báo giá (VND)
+quote_code,customer_code,sale_code,quote_date,total_amount,status,items_summary
+QUOTE-2026-0901,CUST-1001,SALE-01,2026-09-02T10:00:00Z,185000000,ACCEPTED,Hệ thống dây chuyền băng tải con lăn 12m
+QUOTE-2026-0902,CUST-1002,SALE-02,2026-09-06T14:30:00Z,95000000,EXPIRED,Gói giàn giáo cốp pha hợp kim 500m2
+QUOTE-2026-0903,CUST-1003,SALE-03,2026-09-14T09:00:00Z,320000000,ACCEPTED,Lô hóa chất tẩy rửa công nghiệp 20 tấn
+QUOTE-2026-0904,CUST-1004,SALE-04,2026-09-19T11:20:00Z,140000000,PENDING,Hợp đồng bảo trì định kỳ 15 xe đầu kéo
+QUOTE-2026-0905,CUST-1005,SALE-05,2026-09-24T15:00:00Z,450000000,ACCEPTED,Máy dập vỉ thuốc tự động tốc độ cao
+QUOTE-2026-1001,CUST-1006,SALE-06,2026-10-04T10:45:00Z,88000000,PENDING,Gói thiết kế thi công showroom 120m2
+QUOTE-2026-1002,CUST-1007,SALE-01,2026-10-10T14:00:00Z,210000000,ACCEPTED,Dây chuyền in offset 4 màu khổ lớn
+QUOTE-2026-1003,CUST-1008,SALE-03,2026-10-17T09:30:00Z,165000000,PENDING,Hệ thống kho lạnh bảo quản thực phẩm mini

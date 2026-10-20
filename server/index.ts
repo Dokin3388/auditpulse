@@ -2,7 +2,15 @@
 // Frontend accesses Neon strictly through this API layer.
 import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
-import { query, withTransaction } from './db.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { query, withTransaction, pool } from './db.ts';
+import {
+  parseCsv,
+  validateEntityData,
+  commitImportBatch,
+  type EntityType,
+} from './services/dataOnboarding.ts';
 import {
   canSaleMarkActionDone,
   canAuditorStartRecheck,
@@ -603,6 +611,132 @@ app.get('/api/reports/rescued-orders', async (_req: Request, res: Response) => {
     res.json({ data: result.rows });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error retrieving rescued orders';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ============================================================================
+// 6. DATA ONBOARDING & ADMIN IMPORT (PHASE 1.5)
+// ============================================================================
+app.post('/api/onboarding/validate', async (req: Request, res: Response) => {
+  try {
+    const { entityType, csvText, rows } = req.body;
+    if (!entityType) {
+      res.status(400).json({ error: 'entityType là bắt buộc.' });
+      return;
+    }
+
+    let parsedRows: Record<string, any>[] = [];
+    let lineNumbers: number[] = [];
+
+    if (csvText) {
+      const parsed = parseCsv(csvText);
+      parsedRows = parsed.rows;
+      lineNumbers = parsed.rawLineNumbers;
+    } else if (Array.isArray(rows)) {
+      parsedRows = rows;
+      lineNumbers = rows.map((_, idx) => idx + 2);
+    } else {
+      res.status(400).json({ error: 'Cần cung cấp csvText hoặc rows mảng.' });
+      return;
+    }
+
+    const client = await pool.connect();
+    try {
+      const result = await validateEntityData(entityType as EntityType, parsedRows, lineNumbers, client);
+      res.json({ success: true, result });
+    } finally {
+      client.release();
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error validating data';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/onboarding/commit', async (req: Request, res: Response) => {
+  try {
+    const { entityType, fileName, rows, importedBy, validationErrors } = req.body;
+    if (!entityType || !Array.isArray(rows) || rows.length === 0) {
+      res.status(400).json({ error: 'entityType và rows không được để trống.' });
+      return;
+    }
+
+    const actor = importedBy || 'Vũ Thùy Linh (Head Auditor)';
+    const file = fileName || `import-${entityType.toLowerCase()}-${Date.now()}.csv`;
+
+    const client = await pool.connect();
+    try {
+      const result = await commitImportBatch(
+        entityType as EntityType,
+        file,
+        rows,
+        actor,
+        validationErrors || [],
+        client
+      );
+      res.json({ success: true, ...result });
+    } finally {
+      client.release();
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error committing import';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get('/api/onboarding/batches', async (_req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT id, entity_type AS "entityType", file_name AS "fileName", total_rows AS "totalRows",
+              success_rows AS "successRows", failed_rows AS "failedRows", imported_by AS "importedBy",
+              status, validation_report AS "validationReport", created_at AS "createdAt"
+       FROM data_import_batches
+       ORDER BY created_at DESC
+       LIMIT 50`
+    );
+    res.json({ data: result.rows });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error retrieving import batches';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get('/api/onboarding/templates/:entity', (req: Request, res: Response) => {
+  try {
+    const entity = req.params.entity.toUpperCase();
+    const templateMap = {
+      TEAMS: '01_teams_template.csv',
+      USERS: '02_users_leads_template.csv',
+      AUDITORS: '03_auditors_template.csv',
+      SALES: '04_sales_template.csv',
+      ASSIGNMENTS: '05_auditor_assignments_template.csv',
+      ISSUES: '06_issue_catalog_template.csv',
+      SLA: '07_sla_rules_template.csv',
+      CUSTOMERS: '08_operational_customers_sample.csv',
+      QUOTATIONS: '09_operational_quotations_sample.csv',
+      ORDERS: '10_operational_sales_orders_sample.csv',
+      SALE_TEAM_HISTORY: '11_sale_team_history_template.csv',
+    };
+
+    const fileName = templateMap[entity];
+    if (!fileName) {
+      res.status(404).json({ error: `Không tìm thấy template cho thực thể: ${entity}` });
+      return;
+    }
+
+    const tplPath = path.resolve(process.cwd(), 'data/templates', fileName);
+    if (!fs.existsSync(tplPath)) {
+      res.status(404).json({ error: 'File template không tồn tại trên đĩa.' });
+      return;
+    }
+
+    const content = fs.readFileSync(tplPath, 'utf8');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(content);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error reading template';
     res.status(500).json({ error: message });
   }
 });

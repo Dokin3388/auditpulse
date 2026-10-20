@@ -12,7 +12,8 @@
     "db:rollback": "node --experimental-strip-types db/migrate.ts rollback",
     "db:seed": "node --experimental-strip-types db/seed.ts",
     "server": "node --experimental-strip-types server/index.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "data:import": "node --experimental-strip-types scripts/import-data.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

@@ -1,0 +1,15 @@
+# TEMPLATE IMPORT: ISSUE CATALOG (DANH MỤC LỖI QUY TRÌNH & ĐIỀU KIỆN CHẤM)
+# Cột bắt buộc (*): issue_code*, issue_name*, issue_group_code*, issue_group_name*, severity*, hard_fail*, is_definition_complete*, version*
+# RÀNG BUỘC NGHIỆP VỤ:
+# - issue_code: Mã lỗi duy nhất (VD: ISSUE-01, ISSUE-02)
+# - severity: Mức độ nghiêm trọng ['LOW', 'MEDIUM', 'HIGH']
+# - hard_fail: true / false (Nếu true: lập tức fail case và kích hoạt Corrective Action bắt buộc)
+# - is_definition_complete: true / false (CHỈ CÁC ISSUE ĐÃ DUYỆT 'true' MỚI ĐƯỢC PHÉP DÙNG CHO CHẾ TÀI TỰ ĐỘNG)
+# - recheck_guidance_template: Hướng dẫn mẫu để Auditor kiểm tra khắc phục
+issue_code,issue_name,issue_group_code,issue_group_name,severity,hard_fail,recheck_guidance_template,is_definition_complete,version
+ISSUE-01,Không gửi báo giá sau 24h từ khi tiếp nhận nhu cầu,GRP-SLA,Tuân thủ SLA Báo Giá,HIGH,true,Kiểm tra lịch sử email/zalo gửi báo giá chuẩn theo template công ty trong vòng 24h,true,v1.4
+ISSUE-02,Chưa ghi nhận nhu cầu chi tiết vào CRM,GRP-DATA,Chất lượng Dữ liệu CRM,MEDIUM,false,Yêu cầu Sale cập nhật đầy đủ ngân sách và timeline khách hàng trên CRM,true,v1.4
+ISSUE-03,Báo giá quá hạn 7 ngày chưa có tương tác tiếp theo,GRP-FOLLOW,Theo dõi Sau Báo Giá,HIGH,true,Kiểm tra nhật ký gọi điện hoặc tin nhắn chăm sóc sau báo giá kèm phản hồi khách hàng,true,v1.4
+ISSUE-04,Đóng deal sai quy trình chiết khấu không duyệt,GRP-DISCOUNT,Quy chế Giá & Chiết Khấu,HIGH,true,Bắt buộc có phê duyệt bằng văn bản hoặc email từ Giám đốc Kinh doanh cho mức chiết khấu > 10%,true,v1.4
+ISSUE-05,Không cập nhật lý do khi khách hàng từ chối,GRP-DATA,Chất lượng Dữ liệu CRM,LOW,false,Cập nhật phân loại lý do mất đơn (giá/đối thủ/ngân sách) vào hệ thống CRM,true,v1.4
+ISSUE-06,Gửi sai thông tin tài khoản thụ hưởng công ty,GRP-COMPLIANCE,Tuân thủ Pháp lý & Tài chính,HIGH,true,Đính kèm ảnh chụp màn hình gửi lại STK chính thức của công ty và xin lỗi khách hàng,true,v1.4

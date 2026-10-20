@@ -1,0 +1,10 @@
+# TEMPLATE IMPORT: TEAMS (ĐỘI NGŨ SALE)
+# Cột bắt buộc (*): team_code*, team_name*
+# team_code: Mã định danh duy nhất (VD: TEAM-ALPHA, TEAM-BETA, TEAM-GAMMA)
+# team_name: Tên hiển thị đầy đủ của đội ngũ
+# team_lead_email: Email của trưởng nhóm (phải tồn tại trong app_users hoặc để trống nếu chưa có)
+# team_lead_name: Họ tên trưởng nhóm tham khảo
+team_code,team_name,team_lead_email,team_lead_name,notes
+TEAM-ALPHA,Team Alpha - Direct Sales,lead.alpha@auditpulse.vn,Trần Hải Đăng,Đội ngũ phụ trách khách hàng doanh nghiệp trực tiếp
+TEAM-BETA,Team Beta - Inbound & Telesales,lead.beta@auditpulse.vn,Nguyễn Bích Ngọc,Đội ngũ phụ trách khách hàng liên hệ qua web và hotline
+TEAM-GAMMA,Team Gamma - Key Accounts & Enterprise,lead.gamma@auditpulse.vn,Lê Hoàng Nam,Đội ngũ phụ trách tài khoản trọng điểm dự án

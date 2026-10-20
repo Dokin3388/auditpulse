@@ -105,7 +105,13 @@ async function runRollback() {
 
     await client.query('BEGIN');
     try {
-      if (latestVersion === '0002_anti_duplicate_and_overlap_guards.sql') {
+      if (latestVersion === '0003_data_onboarding_and_sla_tables.sql') {
+        await client.query(`
+          DROP TABLE IF EXISTS data_import_batches CASCADE;
+          DROP TABLE IF EXISTS sale_team_history CASCADE;
+          DROP TABLE IF EXISTS sla_configurations CASCADE;
+        `);
+      } else if (latestVersion === '0002_anti_duplicate_and_overlap_guards.sql') {
         await client.query('DROP INDEX IF EXISTS idx_prevent_duplicate_active_action;');
         await client.query(
           'ALTER TABLE auditor_assignments DROP CONSTRAINT IF EXISTS exclude_overlapping_auditor_assignments;'

@@ -1,0 +1,15 @@
+# TEMPLATE IMPORT: SLA CONFIGURATION (CẤU HÌNH THỜI HẠN XỬ LÝ & RECHECK)
+# Cột bắt buộc (*): target_type*, target_code*, action_due_hours*, recheck_due_hours*, max_rechecks*, rule_version*
+# target_type: 'ISSUE' (áp dụng riêng cho 1 lỗi) hoặc 'GROUP' (áp dụng cho cả nhóm lỗi)
+# target_code: Mã lỗi hoặc mã nhóm (VD: ISSUE-01, GRP-SLA, DEFAULT)
+# action_due_hours: Hạn Sale phải khắc phục và gửi bằng chứng (giờ)
+# recheck_due_hours: Hạn Auditor phải hoàn tất thẩm định recheck (giờ)
+# max_rechecks: Số lần recheck tối đa cho phép trước khi báo cáo vi phạm
+# rule_version: Phiên bản cấu hình SLA (VD: v1.4)
+target_type,target_code,target_name,action_due_hours,recheck_due_hours,max_rechecks,rule_version,is_active
+GROUP,GRP-SLA,Nhóm lỗi Tuân thủ SLA Báo Giá,48,24,3,v1.4,true
+GROUP,GRP-DATA,Nhóm lỗi Chất lượng Dữ liệu CRM,72,24,2,v1.4,true
+GROUP,GRP-FOLLOW,Nhóm lỗi Theo dõi Sau Báo Giá,48,24,3,v1.4,true
+GROUP,GRP-DISCOUNT,Nhóm lỗi Quy chế Chiết Khấu & Giá,24,12,2,v1.4,true
+GROUP,GRP-COMPLIANCE,Nhóm lỗi Pháp lý & Tài chính,12,12,1,v1.4,true
+ISSUE,ISSUE-01,Cấu hình ưu tiên riêng cho ISSUE-01,24,24,3,v1.4,true

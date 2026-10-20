@@ -1,0 +1,14 @@
+# NGUỒN VẬN HÀNH: DANH SÁCH KHÁCH HÀNG (CRM MAPPING SAMPLE - 30-60 NGÀY GẦN NHẤT)
+# Cột bắt buộc (*): customer_code*, customer_name*, first_seen_date*, current_sale_code*, current_team_code*
+# first_seen_date: Thời điểm khách hàng phát sinh nhu cầu lần đầu (ISO hoặc YYYY-MM-DD HH:mm:ss)
+# current_sale_code: Mã sale hiện đang phụ trách (phải có trong danh mục Sale)
+# current_team_code: Mã team hiện tại
+customer_code,customer_name,phone,company,channel,first_seen_date,current_sale_code,current_team_code
+CUST-1001,Công ty TNHH Cơ Khí An Phát,0903111222,Cơ Khí An Phát,Direct Web,2026-09-01T08:30:00Z,SALE-01,TEAM-ALPHA
+CUST-1002,CTCP Đầu Tư Xây Dựng Bình Minh,0903333444,Xây Dựng Bình Minh,Facebook Ads,2026-09-05T09:15:00Z,SALE-02,TEAM-ALPHA
+CUST-1003,Tập Đoàn Hóa Chất Cửu Long,0918555666,Hóa Chất Cửu Long,Zalo OA,2026-09-12T14:00:00Z,SALE-03,TEAM-BETA
+CUST-1004,Công ty Vận Tải Đông Đô,0988777888,Vận Tải Đông Đô,Hotline,2026-09-18T10:20:00Z,SALE-04,TEAM-BETA
+CUST-1005,Dược Phẩm Hoàng Mai Med,0909999000,Hoàng Mai Med,Direct Web,2026-09-22T11:45:00Z,SALE-05,TEAM-GAMMA
+CUST-1006,Nội Thất Nam Hải Phong,0934112233,Nội Thất Nam Hải,Facebook Ads,2026-10-02T16:00:00Z,SALE-06,TEAM-GAMMA
+CUST-1007,Công ty CP Bao Bì Tân Á,0945667788,Bao Bì Tân Á,Direct Web,2026-10-08T09:00:00Z,SALE-01,TEAM-ALPHA
+CUST-1008,Tập Đoàn Thực Phẩm Vĩnh Lộc,0912445566,Thực Phẩm Vĩnh Lộc,Zalo OA,2026-10-15T15:30:00Z,SALE-03,TEAM-BETA

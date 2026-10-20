@@ -1,0 +1,11 @@
+# NGUỒN VẬN HÀNH: DANH SÁCH ĐƠN HÀNG (POS/ERP MAPPING SAMPLE - 30-60 NGÀY GẦN NHẤT)
+# Cột bắt buộc (*): order_code*, customer_code*, sale_code*, order_date*, total_amount*, status*
+# quote_code: Mã báo giá liên kết (nếu có)
+# status: 'VALID' | 'DRAFT' | 'CANCELLED' | 'REFUNDED'
+# total_amount: Giá trị đơn hàng thực tế (VND)
+order_code,customer_code,sale_code,quote_code,order_date,total_amount,status
+ORD-2026-0901,CUST-1001,SALE-01,QUOTE-2026-0901,2026-09-04T16:30:00Z,185000000,VALID
+ORD-2026-0902,CUST-1003,SALE-03,QUOTE-2026-0903,2026-09-18T11:00:00Z,320000000,VALID
+ORD-2026-0903,CUST-1005,SALE-05,QUOTE-2026-0905,2026-09-28T14:15:00Z,450000000,VALID
+ORD-2026-1001,CUST-1007,SALE-01,QUOTE-2026-1002,2026-10-14T10:00:00Z,210000000,VALID
+ORD-2026-1002,CUST-1002,SALE-02,,2026-10-18T16:00:00Z,45000000,CANCELLED

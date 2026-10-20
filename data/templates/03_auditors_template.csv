@@ -1,0 +1,8 @@
+# TEMPLATE IMPORT: AUDITOR PROFILES (CHUYÊN VIÊN KIỂM TOÁN VẬN HÀNH)
+# Cột bắt buộc (*): auditor_code*, name*, email*
+# auditor_code: Mã auditor duy nhất (VD: AUD-04, AUD-05)
+# max_daily_capacity: Công suất kiểm tra tối đa/ngày (mặc định: 80)
+# is_active: true / false
+auditor_code,name,email,max_daily_capacity,is_active
+AUD-04,Đặng Hải Nam,auditor.nam@auditpulse.vn,80,true
+AUD-05,Trần Thu Phương,auditor.phuong@auditpulse.vn,80,true

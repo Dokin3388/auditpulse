@@ -1,0 +1,10 @@
+# TEMPLATE IMPORT: SALE PROFILES (CHUYÊN VIÊN KINH DOANH)
+# Cột bắt buộc (*): sale_code*, name*, email*, team_code*
+# RÀNG BUỘC NGHIỆP VỤ: Mọi Sale bắt buộc phải thuộc một Team hợp lệ (team_code phải tồn tại).
+# phone: Số điện thoại liên hệ
+# is_active: true / false
+sale_code,name,email,team_code,phone,is_active
+SALE-07,Bùi Quang Huy,sale.huy@auditpulse.vn,TEAM_NORTH,0912345607,true
+SALE-08,Lê Thanh Nga,sale.nga@auditpulse.vn,TEAM_SOUTH,0912345608,true
+SALE-09,Phan Đình Tùng,sale.tung@auditpulse.vn,TEAM_ENT,0912345609,true
+SALE-10,Vũ Kiều Oanh,sale.oanh@auditpulse.vn,TEAM_KEY,0912345610,true

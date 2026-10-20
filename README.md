@@ -221,6 +221,44 @@ npm test
 
 ---
 
+## 6.5. Phase 1.5: Data Onboarding cho Neon Development
+
+AuditPulse cung cấp cơ chế onboarding dữ liệu chuẩn hóa, phục vụ việc nạp dữ liệu thật vào môi trường development của Neon PostgreSQL mà không làm gián đoạn hay ghi đè toàn bộ dữ liệu production.
+
+### 11 Tệp Template CSV Chuẩn Hóa (`data/templates/`):
+1. `01_teams_template.csv`: Danh mục đội ngũ kinh doanh (bắt buộc: `team_code`, `team_name`).
+2. `02_users_leads_template.csv`: Ban lãnh đạo Head Auditor, Team Lead, Admin.
+3. `03_auditors_template.csv`: Chuyên viên kiểm toán vận hành (`auditor_code`, `email`, `max_daily_capacity`).
+4. `04_sales_template.csv`: Nhân viên kinh doanh (**BẮT BUỘC có `team_code` hợp lệ**).
+5. `05_auditor_assignments_template.csv`: Phân công Auditor phụ trách Sale (**chống overlap khoảng ngày**).
+6. `06_issue_catalog_template.csv`: Danh mục lỗi (**chỉ lỗi đã duyệt mới được dùng cho chế tài tự động**).
+7. `07_sla_rules_template.csv`: Cấu hình hạn xử lý action (giờ) & hạn recheck.
+8. `08_operational_customers_sample.csv`: Dữ liệu khách hàng CRM mẫu 30-60 ngày gần nhất.
+9. `09_operational_quotations_sample.csv`: Báo giá ERP mẫu 30-60 ngày gần nhất.
+10. `10_operational_sales_orders_sample.csv`: Đơn hàng POS/ERP mẫu 30-60 ngày gần nhất.
+11. `11_sale_team_history_template.csv`: Lịch sử điều chuyển team của Sale.
+
+### Công Cụ CLI Onboarding (`npm run data:import`):
+```bash
+# 1. Chạy chế độ Preview & Validate (kiểm tra cú pháp & tính toàn vẹn với DB, không ghi DB):
+npm run data:import -- --file=data/templates/01_teams_template.csv --entity=TEAMS
+
+# 2. Chạy chế độ Commit (ghi dữ liệu thật vào Neon DB và tạo Audit Trail):
+npm run data:import -- --file=data/templates/01_teams_template.csv --entity=TEAMS --commit
+```
+
+### Giao Diện Admin Onboarding Trên Web:
+- Vào menu **Cấu hình & Quản trị** (Settings) -> Tab **Data Onboarding (CSV Import)**.
+- Chọn thực thể cần nạp, tải template 1-click, dán hoặc tải file CSV lên.
+- Bấm **Kiểm tra Dữ liệu (Validate)** để xem trước bảng dữ liệu và báo cáo chi tiết lỗi theo từng dòng.
+- Bấm **Xác nhận Import vào DB (Commit)** để lưu an toàn kèm audit trail.
+
+Tài liệu chi tiết:
+- [Đặc tả Ánh xạ Dữ liệu (docs/DATA_MAPPING_SPEC.md)](./docs/DATA_MAPPING_SPEC.md)
+- [Quy tắc Thẩm định (docs/VALIDATION_RULES.md)](./docs/VALIDATION_RULES.md)
+
+---
+
 ## 7. CI/CD & Quality Gate
 
 Dự án tích hợp GitHub Actions workflow tại `.github/workflows/ci.yml`:

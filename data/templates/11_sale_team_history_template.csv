@@ -1,0 +1,8 @@
+# NGUỒN VẬN HÀNH: LỊCH SỬ THAY ĐỔI TEAM CỦA SALE (HR / ORG MAPPING)
+# Cột bắt buộc (*): sale_code*, new_team_code*, changed_date*
+# old_team_code: Mã team cũ (nếu có)
+# new_team_code: Mã team mới chuyển đến (phải tồn tại trong bảng teams)
+# changed_date: Ngày chuyển team (YYYY-MM-DD hoặc ISO)
+sale_code,old_team_code,new_team_code,changed_date,notes
+SALE-02,TEAM-BETA,TEAM-ALPHA,2026-09-15T00:00:00Z,Điều chuyển tăng cường lực lượng Direct Sales Q4
+SALE-04,TEAM-GAMMA,TEAM-BETA,2026-10-01T00:00:00Z,Tái cơ cấu bộ phận telesales inbound

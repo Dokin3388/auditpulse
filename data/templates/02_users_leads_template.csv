@@ -1,0 +1,10 @@
+# TEMPLATE IMPORT: APP USERS / LEADERSHIP (HEAD AUDITOR & TEAM LEADS)
+# Cột bắt buộc (*): email*, name*, role*
+# role: Một trong các giá trị ['HEAD_AUDITOR', 'TEAM_LEAD', 'ADMIN']
+# is_active: true / false (mặc định: true)
+email,name,role,is_active
+head.audit@auditpulse.vn,Vũ Thùy Linh,HEAD_AUDITOR,true
+lead.alpha@auditpulse.vn,Trần Hải Đăng,TEAM_LEAD,true
+lead.beta@auditpulse.vn,Nguyễn Bích Ngọc,TEAM_LEAD,true
+lead.gamma@auditpulse.vn,Lê Hoàng Nam,TEAM_LEAD,true
+admin@auditpulse.vn,Hệ Thống Admin,ADMIN,true
