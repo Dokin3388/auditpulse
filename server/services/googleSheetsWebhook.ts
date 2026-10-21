@@ -216,6 +216,99 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
   return false;
 }
 
+type PendingGoogleSheetRow = {
+  row: Record<string, string>;
+  rowKey: string;
+  hash: string;
+};
+
+/**
+ * The customer tab is large enough that one network round-trip per row will
+ * exceed a serverless request timeout. Resolve its small reference catalogs
+ * once, then upsert the whole incoming chunk in one statement.
+ */
+async function applyCustomerRows(
+  client: pg.PoolClient,
+  rows: PendingGoogleSheetRow[]
+): Promise<void> {
+  const [sales, teams] = await Promise.all([
+    client.query(`SELECT sp.id, sp.sale_code, u.name FROM sales_profiles sp JOIN app_users u ON u.id = sp.id`),
+    client.query(`SELECT id, code, name FROM teams`),
+  ]);
+  const saleIds = new Map<string, string>();
+  sales.rows.forEach((sale) => {
+    saleIds.set(text(sale.sale_code).toLowerCase(), sale.id);
+    saleIds.set(text(sale.name).toLowerCase(), sale.id);
+  });
+  const teamIds = new Map<string, string>();
+  teams.rows.forEach((team) => {
+    teamIds.set(text(team.code).toLowerCase(), team.id);
+    teamIds.set(text(team.name).toLowerCase(), team.id);
+  });
+
+  const parameters: unknown[] = [];
+  const valueGroups = rows.map(({ row }, index) => {
+    const code = row.ma_khach_hang || row.so_dien_thoai;
+    if (!code || !row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
+    const base = index * 7;
+    parameters.push(
+      code,
+      row.ten_kh,
+      row.so_dien_thoai || null,
+      row.nguon_khach_hang || null,
+      dateOrNow(row.thoi_gian),
+      saleIds.get(text(row.nguoi_phu_trach).toLowerCase()) || null,
+      teamIds.get(text(row.team).toLowerCase()) || null
+    );
+    return `($${base + 1}, $${base + 1}, $${base + 2}, $${base + 3}, NULL, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
+  });
+
+  await client.query(
+    `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
+     VALUES ${valueGroups.join(', ')}
+     ON CONFLICT (code) DO UPDATE SET
+       name = EXCLUDED.name, phone = EXCLUDED.phone, channel = EXCLUDED.channel,
+       current_sale_id = EXCLUDED.current_sale_id, current_team_id = EXCLUDED.current_team_id`,
+    parameters
+  );
+}
+
+async function applyOperationalRows(
+  client: pg.PoolClient,
+  sheetName: string,
+  rows: PendingGoogleSheetRow[]
+): Promise<boolean[]> {
+  if (normalizeGoogleSheetHeader(sheetName) === 'data_customers') {
+    await applyCustomerRows(client, rows);
+    return rows.map(() => true);
+  }
+  const handled: boolean[] = [];
+  for (const { row } of rows) handled.push(await applyOperationalRow(client, sheetName, row));
+  return handled;
+}
+
+async function upsertGoogleSheetRowState(
+  client: pg.PoolClient,
+  sourceId: string,
+  sheetName: string,
+  rows: PendingGoogleSheetRow[]
+): Promise<void> {
+  if (rows.length === 0) return;
+  const parameters: unknown[] = [];
+  const values = rows.map(({ rowKey, hash, row }, index) => {
+    const base = index * 5;
+    parameters.push(sourceId, sheetName, rowKey, hash, JSON.stringify(row));
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+  });
+  await client.query(
+    `INSERT INTO google_sheet_row_state (source_id, sheet_name, source_row_key, content_hash, payload)
+     VALUES ${values.join(', ')}
+     ON CONFLICT (source_id, sheet_name, source_row_key) DO UPDATE SET
+       content_hash = EXCLUDED.content_hash, payload = EXCLUDED.payload, last_synced_at = NOW()`,
+    parameters
+  );
+}
+
 export async function syncGoogleSheetWebhook(
   client: pg.PoolClient,
   payload: GoogleSheetWebhookPayload
@@ -242,31 +335,25 @@ export async function syncGoogleSheetWebhook(
       return { duplicate: true, totalRows: payload.rows.length, appliedRows: 0, skippedRows: payload.rows.length, runId };
     }
 
-    let appliedRows = 0;
-    let skippedRows = 0;
+    const normalizedRows: PendingGoogleSheetRow[] = [];
     for (let index = 0; index < payload.rows.length; index++) {
       const row = toGoogleSheetRow(headers, payload.rows[index]);
       const rowKey = googleSheetSourceRowKey(payload.sheetName, row, (payload.rowStart ?? 2) + index);
       if (!rowKey) throw new Error(`Không xác định được khóa dòng ở dòng ${(payload.rowStart ?? 2) + index}.`);
-      const hash = stableGoogleSheetHash(row);
-      const state = await client.query(
-        `SELECT content_hash FROM google_sheet_row_state WHERE source_id = $1 AND sheet_name = $2 AND source_row_key = $3`,
-        [payload.sourceId, payload.sheetName, rowKey]
-      );
-      if (state.rows[0]?.content_hash === hash) {
-        skippedRows++;
-        continue;
-      }
-      const handled = await applyOperationalRow(client, payload.sheetName, row);
-      await client.query(
-        `INSERT INTO google_sheet_row_state (source_id, sheet_name, source_row_key, content_hash, payload)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (source_id, sheet_name, source_row_key) DO UPDATE SET
-           content_hash = EXCLUDED.content_hash, payload = EXCLUDED.payload, last_synced_at = NOW()`,
-        [payload.sourceId, payload.sheetName, rowKey, hash, JSON.stringify(row)]
-      );
-      if (handled) appliedRows++; else skippedRows++;
+      normalizedRows.push({ row, rowKey, hash: stableGoogleSheetHash(row) });
     }
+
+    const existing = await client.query(
+      `SELECT source_row_key, content_hash FROM google_sheet_row_state
+       WHERE source_id = $1 AND sheet_name = $2 AND source_row_key = ANY($3::varchar[])`,
+      [payload.sourceId, payload.sheetName, normalizedRows.map((row) => row.rowKey)]
+    );
+    const existingHashes = new Map(existing.rows.map((row) => [row.source_row_key, row.content_hash]));
+    const changedRows = normalizedRows.filter((row) => existingHashes.get(row.rowKey) !== row.hash);
+    const handledRows = await applyOperationalRows(client, payload.sheetName, changedRows);
+    await upsertGoogleSheetRowState(client, payload.sourceId, payload.sheetName, changedRows);
+    const appliedRows = handledRows.filter(Boolean).length;
+    const skippedRows = payload.rows.length - appliedRows;
 
     await client.query(
       `UPDATE google_sheet_sync_runs SET status = 'COMPLETED', completed_at = NOW(), applied_rows = $1, skipped_rows = $2 WHERE id = $3`,
