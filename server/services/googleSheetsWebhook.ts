@@ -319,8 +319,13 @@ async function upsertGoogleSheetRowState(
   rows: PendingGoogleSheetRow[]
 ): Promise<void> {
   if (rows.length === 0) return;
+  // A source sheet may repeat its business key. The state table uses that key
+  // as its primary identity too, so write only the final row for each key.
+  const latestRowsByKey = new Map<string, PendingGoogleSheetRow>();
+  for (const pendingRow of rows) latestRowsByKey.set(pendingRow.rowKey, pendingRow);
+  const uniqueRows = [...latestRowsByKey.values()];
   const parameters: unknown[] = [];
-  const values = rows.map(({ rowKey, hash, row }, index) => {
+  const values = uniqueRows.map(({ rowKey, hash, row }, index) => {
     const base = index * 5;
     parameters.push(sourceId, sheetName, rowKey, hash, JSON.stringify(row));
     return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
