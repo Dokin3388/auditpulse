@@ -105,7 +105,13 @@ async function runRollback() {
 
     await client.query('BEGIN');
     try {
-      if (latestVersion === '0003_data_onboarding_and_sla_tables.sql') {
+      if (latestVersion === '0004_google_sheets_webhook_sync.sql') {
+        await client.query(`
+          DROP TABLE IF EXISTS google_sheet_sync_errors CASCADE;
+          DROP TABLE IF EXISTS google_sheet_row_state CASCADE;
+          DROP TABLE IF EXISTS google_sheet_sync_runs CASCADE;
+        `);
+      } else if (latestVersion === '0003_data_onboarding_and_sla_tables.sql') {
         await client.query(`
           DROP TABLE IF EXISTS data_import_batches CASCADE;
           DROP TABLE IF EXISTS sale_team_history CASCADE;

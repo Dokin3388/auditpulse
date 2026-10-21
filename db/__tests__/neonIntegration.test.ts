@@ -8,13 +8,17 @@ dotenv.config();
 
 const { Pool } = pg;
 const DATABASE_URL = process.env.DATABASE_URL;
+// CI intentionally does not receive a database credential. Live invariant
+// checks run only in the protected development environment, never against an
+// implicit localhost fallback.
+const liveTest = DATABASE_URL ? test : test.skip;
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-test('Neon DB: Database connectivity and version verification', async () => {
+liveTest('Neon DB: Database connectivity and version verification', async () => {
   const client = await pool.connect();
   try {
     const res = await client.query('SELECT version(), current_database();');
@@ -25,7 +29,7 @@ test('Neon DB: Database connectivity and version verification', async () => {
   }
 });
 
-test('Neon DB Invariant: Anti-Duplicate Action Constraint blocks duplicate active action on (customer_id, issue_code)', async () => {
+liveTest('Neon DB Invariant: Anti-Duplicate Action Constraint blocks duplicate active action on (customer_id, issue_code)', async () => {
   const client = await pool.connect();
   try {
     // There is already an active action for CUST-004 with issue DISC_001 (ACT-2026-0985 at REOPENED)
@@ -92,7 +96,7 @@ test('Neon DB Invariant: Anti-Duplicate Action Constraint blocks duplicate activ
   }
 });
 
-test('Neon DB Invariant: Assignment Overlap Exclusion Constraint blocks 2 overlapping assignments for same sale', async () => {
+liveTest('Neon DB Invariant: Assignment Overlap Exclusion Constraint blocks 2 overlapping assignments for same sale', async () => {
   const client = await pool.connect();
   try {
     // SALE-02 has Assignment A from 2026-08-01 to 2026-10-26
@@ -146,7 +150,7 @@ test('Neon DB Invariant: Assignment Overlap Exclusion Constraint blocks 2 overla
   }
 });
 
-test('Neon DB Reporting View: v_rescued_orders_attribution calculates valid rescued orders dynamically', async () => {
+liveTest('Neon DB Reporting View: v_rescued_orders_attribution calculates valid rescued orders dynamically', async () => {
   const client = await pool.connect();
   try {
     const res = await client.query('SELECT * FROM v_rescued_orders_attribution;');
