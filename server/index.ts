@@ -4,6 +4,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { query, withTransaction, pool } from './db.ts';
 import {
   parseCsv,
@@ -11,6 +12,7 @@ import {
   commitImportBatch,
   type EntityType,
 } from './services/dataOnboarding.ts';
+import { syncGoogleSheetWebhook, type GoogleSheetWebhookPayload } from './services/googleSheetsWebhook.ts';
 import {
   canSaleMarkActionDone,
   canAuditorStartRecheck,
@@ -616,7 +618,63 @@ app.get('/api/reports/rescued-orders', async (_req: Request, res: Response) => {
 });
 
 // ============================================================================
-// 6. DATA ONBOARDING & ADMIN IMPORT (PHASE 1.5)
+// 6. GOOGLE SHEETS WEBHOOK SYNC
+// The Sheet only sends changed rows (max 500). The server deduplicates every
+// delivery and persists raw source rows before applying permitted operational
+// mappings. Issue logs intentionally remain raw until an auditor reviews them.
+// ============================================================================
+function hasValidWebhookSecret(request: Request): boolean {
+  const expected = process.env.GOOGLE_SHEETS_WEBHOOK_SECRET;
+  const received = request.header('x-auditpulse-webhook-secret');
+  if (!expected || !received) return false;
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+  return expectedBuffer.length === receivedBuffer.length && timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+app.post('/api/sync/google-sheets/webhook', async (req: Request, res: Response) => {
+  if (!process.env.GOOGLE_SHEETS_WEBHOOK_SECRET) {
+    res.status(503).json({ error: 'Google Sheets webhook chưa được cấu hình trên server.' });
+    return;
+  }
+  if (!hasValidWebhookSecret(req)) {
+    res.status(401).json({ error: 'Webhook không hợp lệ.' });
+    return;
+  }
+
+  const payload = req.body as GoogleSheetWebhookPayload;
+  const client = await pool.connect();
+  try {
+    const result = await syncGoogleSheetWebhook(client, payload);
+    res.status(result.duplicate ? 200 : 202).json({ success: true, ...result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể đồng bộ dữ liệu từ Google Sheets.';
+    console.error('Google Sheets webhook sync failed', { message, sourceId: payload?.sourceId, sheetName: payload?.sheetName });
+    res.status(400).json({ error: message });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/sync/google-sheets/status', async (_req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT id, source_id AS "sourceId", sheet_name AS "sheetName", delivery_id AS "deliveryId",
+              received_at AS "receivedAt", completed_at AS "completedAt", status,
+              total_rows AS "totalRows", applied_rows AS "appliedRows", skipped_rows AS "skippedRows", error_message AS "errorMessage"
+       FROM google_sheet_sync_runs
+       ORDER BY received_at DESC
+       LIMIT 50`
+    );
+    res.json({ data: result.rows });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể đọc trạng thái Google Sheets sync.';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ============================================================================
+// 7. DATA ONBOARDING & ADMIN IMPORT (PHASE 1.5)
 // ============================================================================
 app.post('/api/onboarding/validate', async (req: Request, res: Response) => {
   try {
