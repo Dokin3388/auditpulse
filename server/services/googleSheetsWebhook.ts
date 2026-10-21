@@ -65,6 +65,18 @@ export function googleSheetAmount(value: string): number {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+/**
+ * `customers.phone` represents one contact number. A few legacy rows contain
+ * a newline/comma-separated contact list; retain the first phone rather than
+ * attempting to store a contact list in a VARCHAR(50) field.
+ */
+export function primaryGoogleSheetPhone(value: string): string | null {
+  const normalized = text(value);
+  if (!normalized) return null;
+  if (!/[\n,;]/.test(normalized)) return normalized;
+  return normalized.split(/[\n,;]+/).map(text).find(Boolean) ?? null;
+}
+
 function makePendingEmail(role: 'sale' | 'auditor', code: string): string {
   return `sync+${role}-${code.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'unknown'}@pending.auditpulse.local`;
 }
@@ -162,7 +174,7 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
        ON CONFLICT (code) DO UPDATE SET
          name = EXCLUDED.name, phone = EXCLUDED.phone, channel = EXCLUDED.channel,
          current_sale_id = EXCLUDED.current_sale_id, current_team_id = EXCLUDED.current_team_id`,
-      [code, row.ten_kh, row.so_dien_thoai || null, row.nguon_khach_hang || null, dateOrNow(row.thoi_gian), saleId, teamId]
+      [code, row.ten_kh, primaryGoogleSheetPhone(row.so_dien_thoai), row.nguon_khach_hang || null, dateOrNow(row.thoi_gian), saleId, teamId]
     );
     return true;
   }
@@ -254,7 +266,7 @@ async function applyCustomerRows(
     parameters.push(
       code,
       row.ten_kh,
-      row.so_dien_thoai || null,
+      primaryGoogleSheetPhone(row.so_dien_thoai),
       row.nguon_khach_hang || null,
       dateOrNow(row.thoi_gian),
       saleIds.get(text(row.nguoi_phu_trach).toLowerCase()) || null,

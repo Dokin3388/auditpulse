@@ -4,6 +4,7 @@ import {
   googleSheetAmount,
   googleSheetSourceRowKey,
   normalizeGoogleSheetHeader,
+  primaryGoogleSheetPhone,
   stableGoogleSheetHash,
   toGoogleSheetRow,
 } from '../../../server/services/googleSheetsWebhook.ts';
@@ -23,4 +24,10 @@ test('Google Sheets webhook: derives stable deduplication keys', () => {
 test('Google Sheets webhook: has deterministic row hashes and parses VND', () => {
   assert.equal(stableGoogleSheetHash({ a: '1' }), stableGoogleSheetHash({ a: '1' }));
   assert.equal(googleSheetAmount('1.250.000 ₫'), 1250000);
+});
+
+test('Google Sheets webhook: selects one primary phone from legacy contact lists', () => {
+  assert.equal(primaryGoogleSheetPhone('0901\n0902\n0903'), '0901');
+  assert.equal(primaryGoogleSheetPhone('0901'), '0901');
+  assert.equal(primaryGoogleSheetPhone(''), null);
 });
