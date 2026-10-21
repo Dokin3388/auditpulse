@@ -258,10 +258,19 @@ async function applyCustomerRows(
     teamIds.set(text(team.name).toLowerCase(), team.id);
   });
 
+  // The source can have multiple historical rows for one customer code. An
+  // INSERT ... ON CONFLICT statement may update each target at most once, so
+  // retain the latest row from this delivery for every customer identity.
+  const rowsByCustomerCode = new Map<string, PendingGoogleSheetRow>();
+  for (const pendingRow of rows) {
+    const code = pendingRow.row.ma_khach_hang || pendingRow.row.so_dien_thoai;
+    if (!code || !pendingRow.row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
+    rowsByCustomerCode.set(code, pendingRow);
+  }
+
   const parameters: unknown[] = [];
-  const valueGroups = rows.map(({ row }, index) => {
+  const valueGroups = [...rowsByCustomerCode.values()].map(({ row }, index) => {
     const code = row.ma_khach_hang || row.so_dien_thoai;
-    if (!code || !row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
     const base = index * 7;
     parameters.push(
       code,
