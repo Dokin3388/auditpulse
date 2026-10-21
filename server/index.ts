@@ -1,6 +1,6 @@
 // AuditPulse API Server - Node.js/TypeScript Backend for Neon PostgreSQL
 // Frontend accesses Neon strictly through this API layer.
-import express, { Request, Response, NextFunction } from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
