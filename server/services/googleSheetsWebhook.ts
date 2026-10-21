@@ -278,6 +278,10 @@ async function applyOperationalRows(
   sheetName: string,
   rows: PendingGoogleSheetRow[]
 ): Promise<boolean[]> {
+  // Retried batches can contain only rows that are already recorded in the
+  // row-state table. Do not generate an empty INSERT ... VALUES ON CONFLICT.
+  if (rows.length === 0) return [];
+
   if (normalizeGoogleSheetHeader(sheetName) === 'data_customers') {
     await applyCustomerRows(client, rows);
     return rows.map(() => true);
