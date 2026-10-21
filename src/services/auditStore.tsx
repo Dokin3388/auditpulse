@@ -1,7 +1,7 @@
 // oxlint-disable react/only-export-components
 // AuditPulse - Reactive State Store & Business Logic Layer
 // Compliant with AuditFlow Operating Specification v1.1
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type {
   UserProfile,
@@ -50,6 +50,12 @@ import {
   mockSourceSyncLogs,
   mockAuditTrailEvents,
 } from './mockData';
+import {
+  getAuditQueue,
+  getAuditorAssignments,
+  getCorrectiveActions,
+  getRescuedOrders,
+} from './api';
 
 export interface AuditStoreContextType {
   currentUser: UserProfile;
@@ -208,6 +214,37 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [customers] = useState<Customer[]>(mockCustomers);
   const [quotations] = useState<Quotation[]>(mockQuotations);
   const [salesOrders] = useState<SalesOrder[]>(mockSalesOrders);
+  const [liveRescuedOrders, setLiveRescuedOrders] = useState<RescuedOrder[] | null>(null);
+
+  // The UI remains usable before Neon has source data. As soon as an endpoint
+  // returns records, that collection switches from demo data to live data.
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.allSettled([
+      getAuditQueue(),
+      getCorrectiveActions(),
+      getAuditorAssignments(),
+      getRescuedOrders(),
+    ])
+      .then(([queueResult, actionResult, assignmentResult, rescueResult]) => {
+        if (cancelled) return;
+        if (queueResult.status === 'fulfilled' && queueResult.value.length > 0) {
+          setQueueItems(queueResult.value);
+        }
+        if (actionResult.status === 'fulfilled' && actionResult.value.length > 0) {
+          setCorrectiveActions(actionResult.value);
+        }
+        if (assignmentResult.status === 'fulfilled' && assignmentResult.value.length > 0) {
+          setAuditorAssignments(assignmentResult.value);
+        }
+        if (rescueResult.status === 'fulfilled') setLiveRescuedOrders(rescueResult.value);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Switch demo user
   const switchUser = (userId: string) => {
@@ -265,9 +302,10 @@ export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [correctiveActions, currentUser]);
 
   // Dynamically derive rescued orders from ground-truth data (Spec Section 9)
-  const rescuedOrders = useMemo(() => {
+  const derivedRescuedOrders = useMemo(() => {
     return deriveRescuedOrders(correctiveActions, salesOrders, customers, 30);
   }, [correctiveActions, salesOrders, customers]);
+  const rescuedOrders = liveRescuedOrders ?? derivedRescuedOrders;
 
   // Dynamically derive performance metrics for the 3 auditors based on actual records
   const performanceMetrics = useMemo<AuditorPerformanceMetric[]>(() => {
