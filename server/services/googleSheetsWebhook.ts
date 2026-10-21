@@ -94,6 +94,32 @@ async function resolveSaleId(client: pg.PoolClient, saleNameOrCode: string): Pro
   return result.rows[0]?.id ?? null;
 }
 
+/** Preserve historical transaction ownership even when the current sales tab
+ * no longer includes an employee who issued an old quotation/order. */
+async function resolveOrCreateHistoricalSaleId(client: pg.PoolClient, saleNameOrCode: string): Promise<string | null> {
+  const existingId = await resolveSaleId(client, saleNameOrCode);
+  if (existingId) return existingId;
+
+  const name = text(saleNameOrCode);
+  if (!name) return null;
+  const fingerprint = createHash('sha256').update(name.toLowerCase()).digest('hex').slice(0, 32);
+  const id = `SALE-LEGACY-${fingerprint}`;
+  const code = `LEGACY-${fingerprint}`;
+  await client.query(
+    `INSERT INTO app_users (id, email, name, role, is_active)
+     VALUES ($1, $2, $3, 'SALE', false)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+    [id, makePendingEmail('sale', code), name]
+  );
+  await client.query(
+    `INSERT INTO sales_profiles (id, sale_code, team_id, phone)
+     VALUES ($1, $2, NULL, NULL)
+     ON CONFLICT (sale_code) DO NOTHING`,
+    [id, code]
+  );
+  return id;
+}
+
 async function resolveTeamId(client: pg.PoolClient, teamNameOrCode: string): Promise<string | null> {
   const value = text(teamNameOrCode);
   if (!value) return null;
@@ -107,7 +133,7 @@ async function resolveTeamId(client: pg.PoolClient, teamNameOrCode: string): Pro
 async function resolveCustomerId(client: pg.PoolClient, customerCode: string): Promise<string | null> {
   const value = text(customerCode);
   if (!value) return null;
-  const result = await client.query('SELECT id FROM customers WHERE code = $1 LIMIT 1', [value]);
+  const result = await client.query('SELECT id FROM customers WHERE code = $1 OR phone = $1 LIMIT 1', [value]);
   return result.rows[0]?.id ?? null;
 }
 
@@ -181,8 +207,8 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
 
   if (sheet === 'misa_bao_gia_ggs') {
     const code = row.so_bao_gia;
-    const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique);
-    const saleId = await resolveSaleId(client, row.nhan_vien);
+    const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique || row.sdt);
+    const saleId = await resolveOrCreateHistoricalSaleId(client, row.nhan_vien);
     if (!code || !customerId || !saleId) throw new Error('Báo giá chưa nối được khách hàng hoặc sale.');
     await client.query(
       `INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status)
@@ -196,8 +222,8 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
 
   if (sheet === 'misa_don_hang_ggs') {
     const code = row.so_chung_tu;
-    const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique);
-    const saleId = await resolveSaleId(client, row.ten_nhan_vien);
+    const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique || row.sdt);
+    const saleId = await resolveOrCreateHistoricalSaleId(client, row.ten_nhan_vien);
     if (!code || !customerId || !saleId) throw new Error('Đơn hàng chưa nối được khách hàng hoặc sale.');
     await client.query(
       `INSERT INTO sales_orders (id, code, customer_id, sale_id, order_date, total_amount, status)
