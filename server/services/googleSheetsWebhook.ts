@@ -209,7 +209,9 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
     const code = row.so_bao_gia;
     const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique || row.sdt);
     const saleId = await resolveOrCreateHistoricalSaleId(client, row.nhan_vien);
-    if (!code || !customerId || !saleId) throw new Error('Báo giá chưa nối được khách hàng hoặc sale.');
+    // Do not manufacture a customer for incomplete legacy rows. Returning
+    // false lets the rest of the batch import and records this row as skipped.
+    if (!code || !customerId || !saleId) return false;
     await client.query(
       `INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status)
        VALUES ($1, $1, $2, $3, $4, $5, 'PENDING')
@@ -224,7 +226,7 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
     const code = row.so_chung_tu;
     const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique || row.sdt);
     const saleId = await resolveOrCreateHistoricalSaleId(client, row.ten_nhan_vien);
-    if (!code || !customerId || !saleId) throw new Error('Đơn hàng chưa nối được khách hàng hoặc sale.');
+    if (!code || !customerId || !saleId) return false;
     await client.query(
       `INSERT INTO sales_orders (id, code, customer_id, sale_id, order_date, total_amount, status)
        VALUES ($1, $1, $2, $3, $4, $5, 'VALID')
