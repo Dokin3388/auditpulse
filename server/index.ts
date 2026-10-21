@@ -799,8 +799,16 @@ app.get('/api/onboarding/templates/:entity', (req: Request, res: Response) => {
   }
 });
 
+// Keep serverless invocations predictable instead of letting Express render an
+// unhandled error page that could poison a warm function instance.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const message = err instanceof Error ? err.message : 'Unexpected server error';
+  console.error('Unhandled API error', { message });
+  res.status(500).json({ error: 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại.' });
+});
+
 // Start Server if executed directly
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && process.env.VERCEL !== '1') {
   app.listen(PORT, () => {
     console.log(`🚀 AuditPulse API Server running at http://localhost:${PORT}`);
     console.log(`🔌 Connected to Neon PostgreSQL Database.`);
