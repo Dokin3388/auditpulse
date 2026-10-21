@@ -1,8 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/[...path].ts": {
+    "api/index.ts": {
       "includeFiles": "{server/**,src/services/workflowRules.ts,src/types/index.ts}"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
+  ]
 }
