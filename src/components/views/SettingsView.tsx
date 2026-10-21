@@ -1,37 +1,77 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
 import {
   Database,
-  CheckCircle2,
-  RotateCcw,
   Shield,
   Clock,
   Lock,
   UploadCloud,
+  RefreshCw,
 } from 'lucide-react';
 import { Badge, SeverityBadge } from '../common/Badge';
 import { DataOnboardingTab } from './DataOnboardingTab';
+import { getGoogleSheetSyncRuns, type GoogleSheetSyncRun } from '../../services/api';
+
+const googleSourceLabels: Record<GoogleSheetSyncRun['sourceId'], string> = {
+  'sales-operations': 'Vận hành Sale',
+  'sale-issues': 'Chấm lỗi Sale',
+  'audit-team': 'Team Audit',
+};
 
 export const SettingsView: React.FC = () => {
   const {
     currentUser,
     issueDefinitions,
-    sourceSyncLogs,
     approveIssueDefinition,
-    triggerManualSync,
   } = useAuditStore();
 
   const isHeadAuditor = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
 
   const [activeTab, setActiveTab] = useState<'onboarding' | 'catalog' | 'sync'>('onboarding');
-  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [googleSyncRuns, setGoogleSyncRuns] = useState<GoogleSheetSyncRun[]>([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  const handleManualSync = (sourceId: string, name: string) => {
-    if (!isHeadAuditor) return;
-    triggerManualSync(sourceId);
-    setSyncFeedback(`Đã kích hoạt đồng bộ lại nguồn ${name} thành công.`);
-    setTimeout(() => setSyncFeedback(null), 3000);
+  const refreshGoogleSyncStatus = async () => {
+    setSyncLoading(true);
+    setSyncError(null);
+    try {
+      setGoogleSyncRuns(await getGoogleSheetSyncRuns());
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Không thể tải trạng thái đồng bộ.');
+    } finally {
+      setSyncLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (activeTab !== 'sync') return;
+
+    let cancelled = false;
+    void getGoogleSheetSyncRuns()
+      .then((runs) => {
+        if (!cancelled) {
+          setGoogleSyncRuns(runs);
+          setSyncError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSyncError(error instanceof Error ? error.message : 'Không thể tải trạng thái đồng bộ.');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
+
+  const latestGoogleRuns = useMemo(
+    () => Object.keys(googleSourceLabels).map((sourceId) =>
+      googleSyncRuns.find((run) => run.sourceId === sourceId)
+    ),
+    [googleSyncRuns]
+  );
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-200">
@@ -101,13 +141,6 @@ export const SettingsView: React.FC = () => {
           <span>Đồng bộ Dữ liệu Nguồn</span>
         </button>
       </div>
-
-      {syncFeedback && (
-        <div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          {syncFeedback}
-        </div>
-      )}
 
       {/* Tab Content 1: Data Onboarding Engine (Phase 1.5) */}
       {activeTab === 'onboarding' && <DataOnboardingTab />}
@@ -247,55 +280,67 @@ export const SettingsView: React.FC = () => {
                 Quy tắc bất biến: Queue ngày D snapshot từ nguồn chốt 00:00; dữ liệu muộn được dời sang run tiếp theo.
               </p>
             </div>
-            <span className="text-xs font-mono text-slate-400">
-              Múi giờ: Asia/Ho_Chi_Minh
-            </span>
+            <button
+              onClick={() => void refreshGoogleSyncStatus()}
+              disabled={syncLoading}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncLoading ? 'animate-spin' : ''}`} />
+              Làm mới
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {sourceSyncLogs.map((log) => (
+          {syncError && (
+            <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs">
+              {syncError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {latestGoogleRuns.map((run, index) => {
+              const sourceId = Object.keys(googleSourceLabels)[index] as GoogleSheetSyncRun['sourceId'];
+              const isCompleted = run?.status === 'COMPLETED';
+              const isFailed = run?.status === 'FAILED';
+              return (
               <div
-                key={log.id}
+                key={sourceId}
                 className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-850/60 space-y-2 text-xs"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900 dark:text-slate-100">
-                    {log.sourceName}
+                    {googleSourceLabels[sourceId]}
                   </span>
-                  <Badge variant={log.status === 'SYNCED' ? 'success' : 'warning'} size="xs">
-                    {log.status === 'SYNCED' ? 'Đã chốt' : 'Chậm'}
+                  <Badge variant={isCompleted ? 'success' : isFailed ? 'danger' : 'warning'} size="xs">
+                    {isCompleted ? 'Đã đồng bộ' : isFailed ? 'Lỗi' : run ? 'Đang xử lý' : 'Chưa có dữ liệu'}
                   </Badge>
                 </div>
 
                 <div className="space-y-1 text-slate-500">
                   <div>
-                    Bản ghi: <strong className="text-slate-800 dark:text-slate-200">{log.recordCount.toLocaleString('vi-VN')}</strong>
+                    Dòng nhận: <strong className="text-slate-800 dark:text-slate-200">{run?.totalRows ?? 0}</strong>
                   </div>
                   <div>
-                    Độ trễ: <span className="font-mono">{log.latencySeconds}s</span>
+                    Đã áp dụng: <strong className="text-slate-800 dark:text-slate-200">{run?.appliedRows ?? 0}</strong>
                   </div>
                   <div>
-                    Chốt lúc: <span className="font-mono">{new Date(log.lastSyncTime).toLocaleTimeString('vi-VN')}</span>
+                    Lần gần nhất: <span className="font-mono">{run ? new Date(run.receivedAt).toLocaleString('vi-VN') : '—'}</span>
                   </div>
                 </div>
 
-                {log.notes && (
+                {run?.sheetName && (
                   <p className="text-[11px] text-slate-400 pt-1 border-t dark:border-slate-800 line-clamp-2">
-                    {log.notes}
+                    Sheet: {run.sheetName}
                   </p>
                 )}
 
-                {isHeadAuditor && (
-                  <button
-                    onClick={() => handleManualSync(log.id, log.sourceName)}
-                    className="w-full mt-2 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-semibold text-[11px] flex items-center justify-center gap-1 transition-colors"
-                  >
-                    <RotateCcw className="w-3 h-3 text-slate-400" />
-                    Đồng bộ thủ công
-                  </button>
+                {run?.errorMessage && (
+                  <p className="text-[11px] text-rose-600 pt-1 border-t border-rose-100 line-clamp-2">
+                    {run.errorMessage}
+                  </p>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
