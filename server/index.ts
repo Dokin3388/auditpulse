@@ -332,8 +332,8 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
             SELECT
               p.audit_date::text AS "auditDate",
               c.id AS "customerId", c.name AS "customerName", c.phone,
-              c.current_sale_id AS "saleId", u.name AS "saleName",
-              c.current_team_id AS "teamId", t.name AS "teamName",
+              COALESCE(c.current_sale_id, latest_quote_owner.sale_id, latest_order_owner.sale_id) AS "saleId", u.name AS "saleName",
+              COALESCE(c.current_team_id, sp.team_id) AS "teamId", t.name AS "teamName",
               ARRAY_REMOVE(ARRAY[
                 CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1 THEN 'YESTERDAY_CUSTOMERS' END,
                 CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1
