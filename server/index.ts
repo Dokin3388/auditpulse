@@ -21,25 +21,70 @@ import {
   getDayBefore,
 } from '../src/services/workflowRules.ts';
 import type { RecheckResult, CorrectiveActionStatus } from '../src/types/index.ts';
+import { auth } from './auth.ts';
+import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(express.json());
-
 // CORS Middleware
 app.use((_req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-User-Role,X-User-Id');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   if (_req.method === 'OPTIONS') {
     res.sendStatus(200);
     return;
   }
   next();
 });
+
+// Better Auth must receive the raw request before express.json parses it.
+app.all('/api/auth/*splat', toNodeHandler(auth));
+app.use(express.json());
+
+type AppActor = { id: string; email: string; name: string; role: string; avatarUrl: string | null };
+
+const getAppActor = async (req: Request): Promise<AppActor | null> => {
+  const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+  if (!session?.user?.email) return null;
+  const result = await query(
+    `SELECT id, email, name, role, avatar_url AS "avatarUrl"
+     FROM app_users WHERE lower(email) = lower($1) AND is_active = true`,
+    [session.user.email]
+  );
+  return (result.rows[0] as AppActor | undefined) ?? null;
+};
+
+const requireAppSession = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const actor = await getAppActor(req);
+    if (!actor) {
+      res.status(401).json({ error: 'Bạn cần đăng nhập bằng tài khoản AuditPulse được cấp quyền.' });
+      return;
+    }
+    res.locals.actor = actor;
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
+  const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+  res.json({
+    session: { id: session?.session.id, expiresAt: session?.session.expiresAt },
+    user: session?.user,
+    appUser: res.locals.actor,
+  });
+});
+
+// All operational data routes require a real AuditPulse session.
+app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding'], requireAppSession);
+app.use('/api/sync/google-sheets/issue-logs', requireAppSession);
 
 // ============================================================================
 // 1. HEALTH & METRICS
@@ -348,8 +393,9 @@ app.get('/api/actions', async (req: Request, res: Response) => {
 app.post('/api/actions/:id/mark-done', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { notes, evidenceUrl, fileName } = req.body;
-  const actorRole = (req.headers['x-user-role'] as string) || 'SALE';
-  const actorSaleId = (req.headers['x-user-id'] as string) || req.body.saleId;
+  const actor = res.locals.actor as AppActor;
+  const actorRole = actor.role;
+  const actorSaleId = actor.id;
 
   try {
     const actionRes = await query(
@@ -427,8 +473,9 @@ app.post('/api/actions/:id/mark-done', async (req: Request, res: Response) => {
 // Auditor Starts Recheck
 app.post('/api/actions/:id/start-recheck', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const actorRole = (req.headers['x-user-role'] as string) || 'AUDITOR';
-  const actorAuditorId = (req.headers['x-user-id'] as string) || req.body.auditorId;
+  const actor = res.locals.actor as AppActor;
+  const actorRole = actor.role;
+  const actorAuditorId = actor.id;
 
   try {
     const actionRes = await query(
@@ -482,8 +529,9 @@ app.post('/api/actions/:id/start-recheck', async (req: Request, res: Response) =
 app.post('/api/actions/:id/submit-recheck', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { result, notes, nextDueDate } = req.body;
-  const actorRole = (req.headers['x-user-role'] as string) || 'AUDITOR';
-  const actorAuditorId = (req.headers['x-user-id'] as string) || req.body.auditorId;
+  const actor = res.locals.actor as AppActor;
+  const actorRole = actor.role;
+  const actorAuditorId = actor.id;
 
   try {
     const actionRes = await query(
@@ -635,8 +683,9 @@ app.get('/api/assignments', async (req: Request, res: Response) => {
 // Create Assignment with Overlap Prevention
 app.post('/api/assignments', async (req: Request, res: Response) => {
   const { saleId, auditorId, effectiveFrom, reason } = req.body;
-  const actorRole = (req.headers['x-user-role'] as string) || 'HEAD_AUDITOR';
-  const createdBy = (req.headers['x-user-name'] as string) || 'Head Auditor';
+  const actor = res.locals.actor as AppActor;
+  const actorRole = actor.role;
+  const createdBy = actor.name;
 
   if (actorRole !== 'HEAD_AUDITOR' && actorRole !== 'ADMIN') {
     res.status(403).json({ error: 'Từ chối quyền: Chỉ Head Auditor mới có quyền tạo phân công.' });

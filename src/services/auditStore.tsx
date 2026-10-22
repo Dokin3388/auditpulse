@@ -197,9 +197,9 @@ function deriveRescuedOrders(
   return result;
 }
 
-export const AuditProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Current logged in user (default Head Auditor for rich full overview)
-  const [currentUser, setCurrentUser] = useState<UserProfile>(mockUsers[0]);
+export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserProfile }> = ({ children, initialUser }) => {
+  // Current logged in user comes from the real authenticated session.
+  const [currentUser, setCurrentUser] = useState<UserProfile>(initialUser || mockUsers[0]);
   const [allUsers] = useState<UserProfile[]>(mockUsers);
 
   // Core reactive entities

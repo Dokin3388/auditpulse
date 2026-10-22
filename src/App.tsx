@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { AuditProvider } from './services/auditStore';
-import { RoleSwitcherBar } from './components/layout/RoleSwitcherBar';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
 import type { NavTab } from './components/layout/Sidebar';
@@ -13,6 +12,8 @@ import { AuditorPerformanceView } from './components/views/AuditorPerformanceVie
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
 import { AuditorAssignmentView } from './components/views/AuditorAssignmentView';
+import { AuthGate } from './components/AuthGate';
+import type { UserProfile } from './types';
 
 const MainApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
@@ -42,10 +43,7 @@ const MainApp: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      {/* 1. Global Role Switcher Demo Bar */}
-      <RoleSwitcherBar />
-
-      {/* 2. Top Header / Brand Navbar */}
+      {/* Top Header / Brand Navbar */}
       <Navbar darkMode={darkMode} setDarkMode={setDarkMode} />
 
       {/* 3. Main Workspace with Sidebar & Dynamic View */}
@@ -98,9 +96,20 @@ const MainApp: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <AuditProvider>
-      <MainApp />
-    </AuditProvider>
+    <AuthGate>
+      {(identity) => (
+        <AuditProvider initialUser={{
+          id: identity.appUser.id,
+          name: identity.appUser.name,
+          email: identity.appUser.email,
+          role: identity.appUser.role as UserProfile['role'],
+          avatarUrl: identity.appUser.avatarUrl || identity.user.image || undefined,
+          isActive: true,
+        }}>
+          <MainApp />
+        </AuditProvider>
+      )}
+    </AuthGate>
   );
 };
 
