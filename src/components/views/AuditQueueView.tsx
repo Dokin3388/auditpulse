@@ -34,6 +34,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const [selectedAuditor, setSelectedAuditor] = useState<string>('ALL');
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [selectedAuditDate, setSelectedAuditDate] = useState<string>('');
 
   // Selected item for audit modal
   const [activeQueueItem, setActiveQueueItem] = useState<AuditQueueItem | null>(() => {
@@ -62,6 +63,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       // Team
       if (selectedTeam !== 'ALL' && item.teamId !== selectedTeam) return false;
 
+      // Audit date
+      if (selectedAuditDate && item.auditDate.slice(0, 10) !== selectedAuditDate) return false;
+
       // Auditor
       if (selectedAuditor !== 'ALL') {
         if (selectedAuditor === 'UNASSIGNED') {
@@ -82,7 +86,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
       return true;
     });
-  }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus]);
+  }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus, selectedAuditDate]);
 
   // Auditor list for reassignment
   const auditorOptions = allUsers.filter((u) => u.role === 'AUDITOR');
@@ -111,6 +115,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     setSelectedAuditor('ALL');
     setSelectedTag('ALL');
     setSelectedStatus('ALL');
+    setSelectedAuditDate('');
   };
 
   return (
@@ -141,7 +146,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
       {/* Filter Toolbar */}
       <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           {/* Search box */}
           <div className="relative lg:col-span-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -155,6 +160,15 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           </div>
 
           {/* Filter Team */}
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-400 mb-1">Ngày audit</label>
+            <input
+              type="date"
+              value={selectedAuditDate}
+              onChange={(e) => setSelectedAuditDate(e.target.value)}
+              className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
+            />
+          </div>
           <div>
             <select
               value={selectedTeam}
@@ -211,7 +225,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           </div>
         </div>
 
-        {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL') && (
+        {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL' || selectedAuditDate) && (
           <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
             <span className="text-slate-500">
               Đang lọc: Tìm thấy {filteredData.length} kết quả
