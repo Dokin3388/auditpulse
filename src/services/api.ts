@@ -38,12 +38,15 @@ export async function getIssueDefinitions(): Promise<IssueDefinition[]> {
   return getList<IssueDefinition>('/api/issue-definitions');
 }
 
-export async function materializeAuditQueue(): Promise<void> {
+export const todayInVietnam = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+
+export async function materializeAuditQueue(auditDate = todayInVietnam()): Promise<void> {
   const response = await fetch('/api/queue/materialize-from-issue-logs', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: '{}',
+    body: JSON.stringify({ auditDate }),
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;

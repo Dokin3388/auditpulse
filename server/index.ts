@@ -304,8 +304,12 @@ app.get('/api/queue', async (req: Request, res: Response) => {
 // Promote source issue logs into one review queue item per unique customer/day.
 // This is deliberately separate from action creation: an auditor still has to
 // review the source finding before a corrective action exists.
-app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Response) => {
+app.post('/api/queue/materialize-from-issue-logs', async (req: Request, res: Response) => {
   try {
+    const requestedAuditDate = typeof req.body?.auditDate === 'string' ? req.body.auditDate : '';
+    const auditDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedAuditDate)
+      ? requestedAuditDate
+      : null;
     const result = await withTransaction(async (client) => {
       const [sourceRows, sourceRuleRows, customers, sales, assignments] = await Promise.all([
         client.query<{ payload: Record<string, string> }>(
@@ -327,7 +331,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
           ruleCodes: string[];
         }>(`
           WITH p AS (
-            SELECT (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS audit_date
+            SELECT COALESCE($1::date, (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) AS audit_date
           ), candidates AS (
             SELECT
               p.audit_date::text AS "auditDate",
@@ -377,7 +381,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
             CROSS JOIN p
           )
           SELECT * FROM candidates WHERE cardinality("ruleCodes") > 0
-        `),
+        `, [auditDate]),
         client.query<{ id: string; code: string; name: string; phone: string | null }>(
           `SELECT id, code, name, phone FROM customers`
         ),

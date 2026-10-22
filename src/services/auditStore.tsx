@@ -43,6 +43,7 @@ import {
   getAppUsers,
   getIssueDefinitions,
   materializeAuditQueue,
+  todayInVietnam,
   getAuditorAssignments,
   getCorrectiveActions,
   createAssignment,
@@ -220,7 +221,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     void getAuditQueue().then((items) => {
       if (!cancelled) setQueueItems(items);
     }).catch(() => undefined);
-    void materializeAuditQueue()
+    void materializeAuditQueue(todayInVietnam())
       .then(() => getAuditQueue())
       .then((items) => {
         if (!cancelled) setQueueItems(items);
