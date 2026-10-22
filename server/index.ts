@@ -116,9 +116,9 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
   }
 
   const accounts = [
-    { id: 'AUD-01', email: 'auditor01@auditpulse.local' },
-    { id: 'AUD-02', email: 'auditor02@auditpulse.local' },
-    { id: 'AUD-03', email: 'auditor03@auditpulse.local' },
+    { id: 'AUDITOR-AUD-MAI-HOANG', email: 'auditor01@auditpulse.local' },
+    { id: 'AUDITOR-AUD-NGOC-NHI', email: 'auditor02@auditpulse.local' },
+    { id: 'AUDITOR-AUD-PHUONG-TINH', email: 'auditor03@auditpulse.local' },
   ];
 
   try {
@@ -246,7 +246,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
 app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Response) => {
   try {
     const result = await withTransaction(async (client) => {
-      const [sourceRows, customers, sales, teams, assignments] = await Promise.all([
+      const [sourceRows, customers, sales, assignments] = await Promise.all([
         client.query<{ payload: Record<string, string> }>(
           `SELECT payload FROM google_sheet_row_state
            WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
@@ -254,13 +254,11 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
         client.query<{ id: string; code: string; name: string; phone: string | null }>(
           `SELECT id, code, name, phone FROM customers`
         ),
-        client.query<{ id: string; name: string; saleCode: string }>(
-          `SELECT u.id, u.name, sp.sale_code AS "saleCode"
+        client.query<{ id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>(
+          `SELECT u.id, u.name, sp.sale_code AS "saleCode", sp.team_id AS "teamId", t.name AS "teamName"
            FROM app_users u JOIN sales_profiles sp ON sp.id = u.id
+           LEFT JOIN teams t ON t.id = sp.team_id
            WHERE u.role = 'SALE'`
-        ),
-        client.query<{ id: string; code: string; name: string }>(
-          `SELECT id, code, name FROM teams`
         ),
         client.query<{ saleId: string; auditorId: string; effectiveFrom: string; effectiveTo: string | null; auditorName: string; auditorTeam: string | null }>(
           `SELECT a.sale_id AS "saleId", a.auditor_id AS "auditorId",
@@ -277,19 +275,12 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
           if (key?.trim()) byCustomer.set(key.trim().toLowerCase(), customer);
         }
       }
-      const bySale = new Map<string, { id: string; name: string; saleCode: string }>();
+      const bySale = new Map<string, { id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>();
       for (const sale of sales.rows) {
         for (const key of [sale.name, sale.saleCode]) {
           if (key?.trim()) bySale.set(key.trim().toLowerCase(), sale);
         }
       }
-      const byTeam = new Map<string, { id: string; code: string; name: string }>();
-      for (const team of teams.rows) {
-        for (const key of [team.code, team.name]) {
-          if (key?.trim()) byTeam.set(key.trim().toLowerCase(), team);
-        }
-      }
-
       type Group = {
         date: string;
         customer: { id: string; name: string; phone: string | null };
@@ -304,10 +295,12 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
         const date = String(row.date || '').trim().slice(0, 10);
         const customerKey = String(row.sdt || row.ma_khach_hang || row.khach || '').trim().toLowerCase();
         const saleKey = String(row.sale || row.sale_name || row.ten_sale || '').trim().toLowerCase();
-        const teamKey = String(row.team || row.team_name || '').trim().toLowerCase();
         const customer = byCustomer.get(customerKey);
         const sale = bySale.get(saleKey);
-        const team = byTeam.get(teamKey);
+        // Team ownership is canonical in data_sale/sales_profiles. The issue
+        // log may contain an old or mistyped team label, so never let it
+        // overwrite the current master assignment.
+        const team = sale?.teamId && sale.teamName ? { id: sale.teamId, name: sale.teamName } : undefined;
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !customer || !sale || !team) {
           skipped += 1;
           continue;
@@ -355,6 +348,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
              status = CASE WHEN audit_queue_items.status IN ('COMPLETED_PASS', 'COMPLETED_FAIL', 'SKIPPED')
                            THEN audit_queue_items.status ELSE EXCLUDED.status END,
              snapshot_sale_name = EXCLUDED.snapshot_sale_name,
+             team_id = EXCLUDED.team_id,
              snapshot_team_name = EXCLUDED.snapshot_team_name,
              snapshot_auditor_name = COALESCE(audit_queue_items.snapshot_auditor_name, EXCLUDED.snapshot_auditor_name),
              sync_timestamp = NOW()`,
@@ -1107,3 +1101,4 @@ if (process.env.NODE_ENV !== 'test' && process.env.VERCEL !== '1') {
 }
 
 export default app;
+
