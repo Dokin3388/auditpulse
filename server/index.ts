@@ -4,7 +4,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { query, withTransaction, pool } from './db.ts';
 import {
   parseCsv,
@@ -83,7 +83,7 @@ app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
 });
 
 // All operational data routes require a real AuditPulse session.
-app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users'], requireAppSession);
+app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin'], requireAppSession);
 app.use('/api/sync/google-sheets/issue-logs', requireAppSession);
 
 app.get('/api/users', async (req: Request, res: Response) => {
@@ -104,6 +104,51 @@ app.get('/api/users', async (req: Request, res: Response) => {
     res.json({ data: result.rows });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error retrieving users';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) => {
+  const actor = res.locals.actor as AppActor;
+  if (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Chỉ Head Auditor/Admin được tạo tài khoản Auditor.' });
+    return;
+  }
+
+  const accounts = [
+    { id: 'AUD-01', email: 'auditor01@auditpulse.local' },
+    { id: 'AUD-02', email: 'auditor02@auditpulse.local' },
+    { id: 'AUD-03', email: 'auditor03@auditpulse.local' },
+  ];
+
+  try {
+    const created: Array<{ id: string; name: string; email: string; password: string }> = [];
+    for (const account of accounts) {
+      const userResult = await query<{ id: string; name: string; role: string }>(
+        `SELECT id, name, role FROM app_users WHERE id = $1 AND role = 'AUDITOR' AND is_active = true`,
+        [account.id]
+      );
+      const appUser = userResult.rows[0];
+      if (!appUser) continue;
+      const temporaryPassword = `AuditPulse-${randomBytes(9).toString('base64url')}`;
+
+      try {
+        await auth.api.signUpEmail({
+          body: { name: appUser.name, email: account.email, password: temporaryPassword },
+          headers: fromNodeHeaders(req.headers),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('unique')) continue;
+        throw error;
+      }
+
+      await query(`UPDATE app_users SET email = $1 WHERE id = $2`, [account.email, account.id]);
+      created.push({ id: account.id, name: appUser.name, email: account.email, password: temporaryPassword });
+    }
+    res.json({ success: true, accounts: created });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể tạo tài khoản Auditor.';
     res.status(500).json({ error: message });
   }
 });

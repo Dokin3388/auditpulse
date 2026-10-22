@@ -50,6 +50,18 @@ export async function createAssignment(input: {
   }
 }
 
+export async function bootstrapAuditorAccounts(): Promise<Array<{ id: string; name: string; email: string; password: string }>> {
+  const response = await fetch('/api/admin/bootstrap-auditors', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  const payload = (await response.json().catch(() => null)) as { accounts?: Array<{ id: string; name: string; email: string; password: string }>; error?: string } | null;
+  if (!response.ok) throw new Error(payload?.error || 'Không thể tạo tài khoản Auditor.');
+  return payload?.accounts || [];
+}
+
 interface ApiListResponse<T> {
   data: T[];
 }

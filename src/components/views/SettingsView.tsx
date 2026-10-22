@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Badge, SeverityBadge } from '../common/Badge';
 import { DataOnboardingTab } from './DataOnboardingTab';
-import { getGoogleSheetSyncRuns, getSourceIssueLogs, type GoogleSheetSyncRun, type SourceIssueLog } from '../../services/api';
+import { bootstrapAuditorAccounts, getGoogleSheetSyncRuns, getSourceIssueLogs, type GoogleSheetSyncRun, type SourceIssueLog } from '../../services/api';
 
 const googleSourceLabels: Record<GoogleSheetSyncRun['sourceId'], string> = {
   'sales-operations': 'Vận hành Sale',
@@ -33,6 +33,17 @@ export const SettingsView: React.FC = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [issueLogs, setIssueLogs] = useState<SourceIssueLog[]>([]);
   const [issueLogTotal, setIssueLogTotal] = useState(0);
+  const [bootstrapAccounts, setBootstrapAccounts] = useState<Array<{ id: string; name: string; email: string; password: string }>>([]);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+
+  const createAuditorAccounts = async () => {
+    setBootstrapError(null);
+    try {
+      setBootstrapAccounts(await bootstrapAuditorAccounts());
+    } catch (error) {
+      setBootstrapError(error instanceof Error ? error.message : 'Không thể tạo tài khoản Auditor.');
+    }
+  };
 
   const refreshGoogleSyncStatus = async () => {
     setSyncLoading(true);
@@ -99,6 +110,12 @@ export const SettingsView: React.FC = () => {
           </p>
         </div>
 
+        {isHeadAuditor && (
+          <button onClick={createAuditorAccounts} className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-bold text-white hover:bg-brand-700">
+            Tạo 3 tài khoản Auditor nội bộ
+          </button>
+        )}
+
         {!isHeadAuditor && (
           <div className="text-xs text-slate-400 flex items-center gap-1.5 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
             <Lock className="w-3.5 h-3.5" />
@@ -106,6 +123,16 @@ export const SettingsView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {(bootstrapAccounts.length > 0 || bootstrapError) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {bootstrapError && <p className="text-rose-700">{bootstrapError}</p>}
+          {bootstrapAccounts.length > 0 && <>
+            <p className="font-bold">Đã tạo/cập nhật tài khoản Auditor. Gửi riêng thông tin dưới đây cho từng người:</p>
+            <div className="mt-2 space-y-1 font-mono text-xs">{bootstrapAccounts.map((account) => <div key={account.id}>{account.name} — {account.email} — {account.password}</div>)}</div>
+          </>}
+        </div>
+      )}
 
       {/* Sub Tabs Bar */}
       <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-850 rounded-xl border border-slate-200/80 dark:border-slate-800 w-fit">
