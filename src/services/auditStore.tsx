@@ -216,11 +216,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     void Promise.allSettled([
       getAppUsers(),
       getIssueDefinitions(),
-      // Refresh from the issue log when possible, but never hide the existing
-      // queue if the refresh endpoint is slow or temporarily unavailable.
-      materializeAuditQueue()
-        .catch(() => undefined)
-        .then(() => getAuditQueue()),
+      materializeAuditQueue().then(() => getAuditQueue()),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
@@ -970,3 +966,4 @@ export const useAuditStore = () => {
   }
   return context;
 };
+

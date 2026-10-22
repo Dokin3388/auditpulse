@@ -49,14 +49,6 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const [newAuditorId, setNewAuditorId] = useState('');
   const [reassignReason, setReassignReason] = useState('');
 
-  const availableAuditDates = useMemo(
-    () => [...new Set(filteredQueueItems.map((item) => item.auditDate.slice(0, 10)))].sort((a, b) => b.localeCompare(a)),
-    [filteredQueueItems]
-  );
-  // Start on the newest available audit day so an old backlog never masks
-  // today's operational work when the queue is opened.
-  const effectiveAuditDate = selectedAuditDate || availableAuditDates[0] || '';
-
   // Apply filters
   const filteredData = useMemo(() => {
     return filteredQueueItems.filter((item) => {
@@ -72,7 +64,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       if (selectedTeam !== 'ALL' && item.teamId !== selectedTeam) return false;
 
       // Audit date
-      if (effectiveAuditDate && item.auditDate.slice(0, 10) !== effectiveAuditDate) return false;
+      if (selectedAuditDate && item.auditDate.slice(0, 10) !== selectedAuditDate) return false;
 
       // Auditor
       if (selectedAuditor !== 'ALL') {
@@ -94,7 +86,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
       return true;
     });
-  }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus, effectiveAuditDate]);
+  }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus, selectedAuditDate]);
 
   // Auditor list for reassignment
   const auditorOptions = allUsers.filter((u) => u.role === 'AUDITOR');
@@ -103,6 +95,11 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
     [allUsers]
   );
+  const availableAuditDates = useMemo(
+    () => [...new Set(filteredQueueItems.map((item) => item.auditDate.slice(0, 10)))].sort(),
+    [filteredQueueItems]
+  );
+
   const handleOpenReassign = (item: AuditQueueItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setReassignItem(item);
@@ -171,7 +168,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <label className="block text-[10px] font-semibold text-slate-400 mb-1">Ngày audit</label>
             <input
               type="date"
-              value={effectiveAuditDate}
+              value={selectedAuditDate}
               onChange={(e) => setSelectedAuditDate(e.target.value)}
               className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
             />
@@ -235,7 +232,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           </div>
         </div>
 
-        {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL' || effectiveAuditDate) && (
+        {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL' || selectedAuditDate) && (
           <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
             <span className="text-slate-500">
               Đang lọc: Tìm thấy {filteredData.length} kết quả
@@ -454,3 +451,4 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     </div>
   );
 };
+

@@ -112,9 +112,8 @@ async function resolveOrCreateHistoricalSaleId(client: pg.PoolClient, saleNameOr
   const existingId = await resolveSaleId(client, saleNameOrCode);
   if (existingId) return existingId;
 
-  const name = text(saleNameOrCode);
-  if (!name) return null;
-  const fingerprint = createHash('sha256').update(name.toLowerCase()).digest('hex').slice(0, 32);
+  const name = text(saleNameOrCode) || 'Sale lịch sử chưa xác định';
+  const fingerprint = createHash('sha256').update((text(saleNameOrCode) || '__unknown__').toLowerCase()).digest('hex').slice(0, 32);
   const id = `SALE-LEGACY-${fingerprint}`;
   const code = `LEGACY-${fingerprint}`;
   await client.query(
@@ -147,6 +146,36 @@ async function resolveCustomerId(client: pg.PoolClient, customerCode: string): P
   if (!value) return null;
   const result = await client.query('SELECT id FROM customers WHERE code = $1 OR phone = $1 LIMIT 1', [value]);
   return result.rows[0]?.id ?? null;
+}
+
+/** Keep every historical quotation/order even when its customer was not
+ * present in the CRM customer tab. The transaction identity is still unique
+ * by customer code/phone; only truly incomplete rows fall back to a stable
+ * name+phone fingerprint instead of being silently dropped. */
+async function resolveOrCreateHistoricalCustomerId(
+  client: pg.PoolClient,
+  customerCodeOrPhone: string,
+  customerName: string,
+  phone: string,
+  firstSeenDate: string
+): Promise<string | null> {
+  const lookup = text(customerCodeOrPhone);
+  const existingId = await resolveCustomerId(client, lookup);
+  if (existingId) return existingId;
+
+  const name = text(customerName) || 'Khách hàng lịch sử';
+  const identity = lookup || `${name}|${primaryGoogleSheetPhone(phone) || ''}`;
+  if (!identity) return null;
+  const fingerprint = createHash('sha256').update(identity.toLowerCase()).digest('hex').slice(0, 24);
+  const code = lookup || `LEGACY-CUSTOMER-${fingerprint}`;
+  await client.query(
+    `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
+     VALUES ($1, $2, $3, $4, NULL, 'HISTORICAL_TRANSACTION', $5, NULL, NULL)
+     ON CONFLICT (code) DO UPDATE SET name = COALESCE(NULLIF(customers.name, ''), EXCLUDED.name),
+       phone = COALESCE(customers.phone, EXCLUDED.phone)`,
+    [code, code, name, primaryGoogleSheetPhone(phone), dateOrNow(firstSeenDate)]
+  );
+  return code;
 }
 
 async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row: Record<string, string>): Promise<boolean> {
@@ -221,10 +250,9 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
 
   if (sheet === 'misa_bao_gia_ggs') {
     const code = row.so_bao_gia;
-    const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique || row.sdt);
+    const customerKey = row.ma_khach_hang_unique || row.sdt;
+    const customerId = await resolveOrCreateHistoricalCustomerId(client, customerKey, row.khach_hang, row.sdt, row.ngay_bao_gia);
     const saleId = await resolveOrCreateHistoricalSaleId(client, row.nhan_vien);
-    // Do not manufacture a customer for incomplete legacy rows. Returning
-    // false lets the rest of the batch import and records this row as skipped.
     if (!code || !customerId || !saleId) return false;
     await client.query(
       `INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status)
@@ -238,7 +266,8 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
 
   if (sheet === 'misa_don_hang_ggs') {
     const code = row.so_chung_tu;
-    const customerId = await resolveCustomerId(client, row.ma_khach_hang_unique || row.sdt);
+    const customerKey = row.ma_khach_hang_unique || row.sdt;
+    const customerId = await resolveOrCreateHistoricalCustomerId(client, customerKey, row.ten_khach_hang, row.sdt, row.ngay_chung_tu);
     const saleId = await resolveOrCreateHistoricalSaleId(client, row.ten_nhan_vien);
     if (!code || !customerId || !saleId) return false;
     await client.query(
@@ -447,3 +476,4 @@ export async function syncGoogleSheetWebhook(
     throw error;
   }
 }
+

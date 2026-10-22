@@ -276,9 +276,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
       FROM audit_queue_items q
       JOIN customers c ON c.id = q.customer_id
       ${whereClause}
-      -- Newest audit days are the operational worklist; history remains
-      -- available through the explicit date filter.
-      ORDER BY q.audit_date DESC, q.created_at ASC;
+      ORDER BY q.created_at ASC;
     `;
 
     const result = await query(sql, values);
@@ -1159,3 +1157,4 @@ if (process.env.NODE_ENV !== 'test' && process.env.VERCEL !== '1') {
 }
 
 export default app;
+
