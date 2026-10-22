@@ -48,12 +48,12 @@ const MainApp: React.FC = () => {
       <Navbar darkMode={darkMode} setDarkMode={setDarkMode} />
 
       {/* 3. Main Workspace with Sidebar & Dynamic View */}
-      <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col md:flex-row">
+      <div className="flex-1 max-w-[1600px] w-full mx-auto flex flex-col md:flex-row">
         {/* Navigation Sidebar */}
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
         {/* Dynamic Content View */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-5 lg:p-6 min-w-0 overflow-y-auto">
           {activeTab === 'dashboard' && (
             <DashboardView
               onNavigate={setActiveTab}

@@ -109,43 +109,41 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-200">
+    <div className="space-y-4 pb-8 animate-in fade-in duration-150">
       {/* Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               Run: RUN-2026-1020 • v1.1
             </span>
-            <span className="text-xs text-slate-400">Snapshot lúc 00:02:15</span>
+            <span className="text-xs text-slate-400">Snapshot 00:02:15</span>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white mt-1">
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white mt-1">
             Hàng chờ Audit Hằng ngày (Audit Queue)
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Mỗi khách hàng là 1 dòng duy nhất, gộp nhiều tag rủi ro phát sinh trong ngày D.
+            Mỗi khách hàng 1 dòng duy nhất, gộp nhiều tag rủi ro phát sinh trong ngày audit D.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 text-xs">
-          <div className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 font-medium">
-            Tổng: <strong>{filteredData.length}</strong> ca audit
-          </div>
+        <div className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-800">
+          Tổng: <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredData.length}</strong> ca audit
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* Minimal Filter Toolbar */}
+      <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
           {/* Search box */}
           <div className="relative lg:col-span-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
             <input
               type="text"
               placeholder="Tìm khách, SĐT, sale..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
+              className="w-full text-xs pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100 placeholder:text-slate-400"
             />
           </div>
 
@@ -154,7 +152,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <select
               value={selectedTeam}
               onChange={(e) => setSelectedTeam(e.target.value)}
-              className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Team Sale</option>
               <option value="TEAM-NORTH">Team B2B Miền Bắc</option>
@@ -169,7 +167,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <select
               value={selectedAuditor}
               onChange={(e) => setSelectedAuditor(e.target.value)}
-              className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Auditor</option>
               <option value="AUD-01">Linh Nguyễn (AUD-01)</option>
@@ -184,12 +182,12 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <select
               value={selectedTag}
               onChange={(e) => setSelectedTag(e.target.value)}
-              className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Risk Tags</option>
-              <option value="YESTERDAY_CUSTOMERS">⚡ Khách hôm qua</option>
-              <option value="NO_QUOTATION">⏱️ Chưa báo giá 2 ngày</option>
-              <option value="QUOTED_NOT_ORDERED">🎯 Báo giá chưa chốt 7 ngày</option>
+              <option value="YESTERDAY_CUSTOMERS">Khách hôm qua</option>
+              <option value="NO_QUOTATION">Chưa báo giá 2 ngày</option>
+              <option value="QUOTED_NOT_ORDERED">Báo giá chưa chốt 7 ngày</option>
             </select>
           </div>
 
@@ -198,12 +196,12 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Trạng thái</option>
               <option value="ASSIGNED">Chờ audit (ASSIGNED)</option>
               <option value="IN_REVIEW">Đang chấm (IN_REVIEW)</option>
-              <option value="COMPLETED_PASS">Audit ĐẠT (COMPLETED_PASS)</option>
+              <option value="COMPLETED_PASS">Audit ĐẠT (PASS)</option>
               <option value="COMPLETED_FAIL">Audit KHÔNG ĐẠT (FAIL)</option>
               <option value="SKIPPED">Bỏ qua (SKIPPED)</option>
               <option value="BLOCKED">Bị chặn (BLOCKED)</option>
@@ -212,15 +210,15 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
         </div>
 
         {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL') && (
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-slate-500">
+          <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-slate-500 dark:text-slate-400 text-[11px]">
               Đang lọc: Tìm thấy {filteredData.length} kết quả
             </span>
             <button
               onClick={resetFilters}
-              className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 font-semibold"
+              className="text-slate-700 dark:text-slate-300 hover:underline flex items-center gap-1 font-medium text-[11px]"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Xóa bộ lọc
+              <RotateCcw className="w-3 h-3" /> Xóa bộ lọc
             </button>
           </div>
         )}
@@ -236,17 +234,17 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           onAction={resetFilters}
         />
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50/70 dark:bg-slate-850/70 border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[11px]">
+              <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="py-3 px-4 font-bold">Khách hàng / SĐT</th>
-                  <th className="py-3 px-4 font-bold">Sale phụ trách (Snapshot)</th>
-                  <th className="py-3 px-4 font-bold">Risk Tags (Rule v1.1)</th>
-                  <th className="py-3 px-4 font-bold">Auditor phụ trách</th>
-                  <th className="py-3 px-4 font-bold">Trạng thái Audit</th>
-                  <th className="py-3 px-4 font-bold text-right">Thao tác</th>
+                  <th className="py-2.5 px-3 font-semibold">Khách hàng / SĐT</th>
+                  <th className="py-2.5 px-3 font-semibold">Sale phụ trách (Snapshot)</th>
+                  <th className="py-2.5 px-3 font-semibold">Risk Tags</th>
+                  <th className="py-2.5 px-3 font-semibold">Auditor phụ trách</th>
+                  <th className="py-2.5 px-3 font-semibold">Trạng thái Audit</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
@@ -254,28 +252,28 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                   <tr
                     key={item.id}
                     onClick={() => setActiveQueueItem(item)}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group"
+                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 cursor-pointer transition-colors"
                   >
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-brand-600 transition-colors">
+                    <td className="py-2.5 px-3">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
                         {item.customerName}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
                         <span className="font-mono">{item.customerPhone}</span>
                         <span>•</span>
-                        <span>Vào lúc: {new Date(item.customerFirstSeen).toLocaleDateString('vi-VN')}</span>
+                        <span>{new Date(item.customerFirstSeen).toLocaleDateString('vi-VN')}</span>
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-800 dark:text-slate-200">
+                    <td className="py-2.5 px-3">
+                      <div className="font-medium text-slate-800 dark:text-slate-200">
                         {item.saleName}
                       </div>
                       <div className="text-[11px] text-slate-400">{item.teamName}</div>
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <div className="flex flex-wrap items-center gap-1.5 max-w-xs">
+                    <td className="py-2.5 px-3">
+                      <div className="flex flex-wrap items-center gap-1 max-w-xs">
                         {item.riskTags.map((tag) => (
                           <RiskTagBadge key={tag.code} code={tag.code} label={tag.label} />
                         ))}
@@ -285,32 +283,31 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                               e.stopPropagation();
                               if (onNavigateToAction) onNavigateToAction(item.activeActionId!);
                             }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 hover:underline"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:underline"
                             title="Bấm để mở Action đang mở liên kết"
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
                             Đang theo dõi
                           </span>
                         )}
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4">
+                    <td className="py-2.5 px-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">
+                        <span className="font-normal text-slate-700 dark:text-slate-300">
                           {item.assignedAuditorName || (
-                            <span className="text-amber-500 font-semibold">Chưa gán</span>
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">Chưa gán</span>
                           )}
                         </span>
                         {item.sharedWork && (
-                          <Badge variant="purple" size="xs" className="text-[10px]">
+                          <Badge variant="neutral" size="xs" className="text-[9px]">
                             Shared
                           </Badge>
                         )}
                         {(currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN') && (
                           <button
                             onClick={(e) => handleOpenReassign(item, e)}
-                            className="p-1 rounded text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 ml-1"
+                            className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 ml-1 transition-colors"
                             title="Chuyển giao Auditor (Head Auditor only)"
                           >
                             <UserCheck className="w-3.5 h-3.5" />
@@ -319,29 +316,27 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-1">
+                    <td className="py-2.5 px-3">
+                      <div className="space-y-0.5">
                         <QueueStatusBadge status={item.status} />
                         {item.skipOrBlockReason && (
                           <p className="text-[10px] text-slate-400 truncate max-w-[180px]">
-                            Lý do: {item.skipOrBlockReason}
+                            {item.skipOrBlockReason}
                           </p>
                         )}
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveQueueItem(item);
-                          }}
-                          className="px-3 py-1.5 bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/80 text-brand-700 dark:text-brand-300 rounded-lg font-semibold text-xs transition-colors flex items-center gap-1"
-                        >
-                          Chấm Case <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                    <td className="py-2.5 px-3 text-right">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveQueueItem(item);
+                        }}
+                        className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 rounded text-[11px] font-medium transition-colors inline-flex items-center gap-1"
+                      >
+                        Chấm Case <ChevronRight className="w-3 h-3" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -364,27 +359,27 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
         <Modal
           isOpen={Boolean(reassignItem)}
           onClose={() => setReassignItem(null)}
-          title="Chuyển giao Queue Item (Head Auditor)"
-          subtitle={`Chuyển giao ca audit cho khách ${reassignItem.customerName}`}
+          title="Chuyển giao Queue Item"
+          subtitle={`Chuyển giao ca audit cho khách: ${reassignItem.customerName}`}
           maxWidth="md"
         >
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200">
+          <div className="space-y-3 text-xs">
+            <div className="p-2.5 bg-slate-50 dark:bg-slate-850 rounded border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
               <p className="font-semibold">Lưu ý tuân thủ Spec v1.1:</p>
-              <p className="mt-1">
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                 Queue Item được chuyển giao sau khi tạo sẽ được gắn cờ <strong>shared_work</strong>. 
                 Sản lượng KPI và attribution đơn cứu sẽ được tính theo quy tắc shared work của Head Auditor.
               </p>
             </div>
 
             <div>
-              <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+              <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
                 Auditor mới phụ trách:
               </label>
               <select
                 value={newAuditorId}
                 onChange={(e) => setNewAuditorId(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs"
+                className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 {auditorOptions.map((a) => (
                   <option key={a.auditorId} value={a.auditorId}>
@@ -395,7 +390,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             </div>
 
             <div>
-              <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+              <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
                 Lý do chuyển giao (Bắt buộc):
               </label>
               <textarea
@@ -403,7 +398,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                 placeholder="VD: Auditor cũ nghỉ ốm, xung đột quyền quản lý..."
                 value={reassignReason}
                 onChange={(e) => setReassignReason(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs"
+                className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
               />
             </div>
 
@@ -411,7 +406,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               <button
                 type="button"
                 onClick={() => setReassignItem(null)}
-                className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
+                className="px-3 py-1.5 rounded-md text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs"
               >
                 Hủy
               </button>
@@ -419,7 +414,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                 type="button"
                 onClick={handleConfirmReassign}
                 disabled={!reassignReason.trim()}
-                className="px-4 py-1.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-medium rounded-md text-xs disabled:opacity-40 transition-colors"
               >
                 Xác nhận chuyển giao
               </button>

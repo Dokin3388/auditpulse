@@ -285,7 +285,6 @@ export const DataOnboardingTab: React.FC = () => {
     // Run Validation Rules
     const errors: RowError[] = [];
     const knownTeams = new Set(['TEAM-ALPHA', 'TEAM-BETA', 'TEAM-GAMMA', 'TEAM_NORTH', 'TEAM_ENT', 'TEAM_KEY', 'TEAM_SOUTH']);
-    // Include teams in sample if importing teams
     if (selectedEntityId === 'TEAMS') {
       rows.forEach((r) => knownTeams.add(r.team_code || r.code));
     }
@@ -311,7 +310,6 @@ export const DataOnboardingTab: React.FC = () => {
         if (!email) errors.push({ rowNumber: rowNum, field: 'email', error: 'Email không được để trống.', severity: 'ERROR' });
         else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push({ rowNumber: rowNum, field: 'email', error: `Email '${email}' sai định dạng.`, rawValue: email, severity: 'ERROR' });
 
-        // MANDATORY RULE: Sale bắt buộc có team
         if (!teamCode) {
           errors.push({ rowNumber: rowNum, field: 'team_code', error: 'Sale bắt buộc có team: Cột team_code không được để trống.', severity: 'ERROR' });
         }
@@ -381,7 +379,6 @@ export const DataOnboardingTab: React.FC = () => {
       return;
     }
 
-    // Try posting to API server if running, else record locally
     try {
       const res = await fetch('http://localhost:5000/api/onboarding/commit', {
         method: 'POST',
@@ -405,7 +402,6 @@ export const DataOnboardingTab: React.FC = () => {
         throw new Error('API server unavailable or returned error');
       }
     } catch {
-      // Local fallback for frontend test preview
       const newBatch: ImportBatchRecord = {
         id: `BATCH-${Date.now()}`,
         entityType: selectedEntityId,
@@ -429,38 +425,38 @@ export const DataOnboardingTab: React.FC = () => {
   const warningsCount = validationErrors.filter((e) => e.severity === 'WARNING').length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 1. Header & Step Explanation */}
-      <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-sm border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-brand-500/20 text-brand-300 border border-brand-500/30">
+            <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
               Phase 1.5 Neon Development
             </span>
-            <span className="text-xs text-slate-400">Data Onboarding Engine</span>
+            <span className="text-xs text-slate-500">Data Onboarding Engine</span>
           </div>
-          <h2 className="text-lg font-bold text-white mt-1 flex items-center gap-2">
-            <UploadCloud className="w-5 h-5 text-brand-400" />
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-2">
+            <UploadCloud className="w-4 h-4 text-slate-600 dark:text-slate-400" />
             Nhập Dữ liệu Thực tế & Quản lý Onboarding
           </h2>
-          <p className="text-xs text-slate-300 max-w-2xl mt-0.5 leading-relaxed">
+          <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl mt-0.5 leading-relaxed">
             Hỗ trợ import CSV chuẩn hóa cho danh mục tổ chức, danh mục lỗi, phân công auditor và dữ liệu vận hành CRM/ERP. Tự động kiểm tra trùng lặp mã, ràng buộc Sale phải có Team, và chống chồng lấn ngày phân công.
           </p>
         </div>
 
         <button
           onClick={handleDownloadTemplate}
-          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-2 transition-colors whitespace-nowrap shadow-sm"
+          className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors whitespace-nowrap"
         >
-          <Download className="w-3.5 h-3.5 text-brand-400" />
+          <Download className="w-3.5 h-3.5" />
           Tải Template CSV Mẫu
         </button>
       </div>
 
       {/* 2. Entity Selector Pills */}
-      <div className="space-y-2">
-        <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-          <FileSpreadsheet className="w-3.5 h-3.5 text-brand-500" />
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+          <FileSpreadsheet className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
           Chọn thực thể cần import (Target Entity):
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -468,27 +464,19 @@ export const DataOnboardingTab: React.FC = () => {
             <button
               key={opt.id}
               onClick={() => handleEntityChange(opt.id)}
-              className={`text-left p-2.5 rounded-xl border text-xs transition-all ${
+              className={`text-left p-2 rounded-md border text-xs transition-colors ${
                 selectedEntityId === opt.id
-                  ? 'border-brand-500 bg-brand-50/60 dark:bg-brand-950/40 text-brand-900 dark:text-brand-200 ring-2 ring-brand-500/20 shadow-sm'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
+                  ? 'border-slate-900 bg-slate-100/70 text-slate-900 dark:border-slate-200 dark:bg-slate-800 dark:text-slate-100 font-semibold'
+                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300'
               }`}
             >
-              <div className="font-bold flex items-center justify-between">
+              <div className="flex items-center justify-between">
                 <span className="truncate">{opt.name.split('(')[0].trim()}</span>
-                <span
-                  className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
-                    opt.category === 'ORG'
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                      : opt.category === 'CORE'
-                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                  }`}
-                >
+                <span className="text-[9px] px-1 py-0.2 rounded font-mono bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                   {opt.category}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 truncate mt-0.5">
+              <div className="text-[10px] text-slate-500 truncate mt-0.5 font-normal">
                 {opt.templateFileName}
               </div>
             </button>
@@ -497,18 +485,18 @@ export const DataOnboardingTab: React.FC = () => {
       </div>
 
       {/* 3. File & Editor Input Box */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-3 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 border-b pb-2.5 dark:border-slate-800">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FileText className="w-4 h-4 text-brand-500" />
+            <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
               Nội dung Dữ liệu CSV ({currentEntity.templateFileName})
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">{currentEntity.description}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">{currentEntity.description}</p>
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="cursor-pointer px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+            <label className="cursor-pointer px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded text-xs font-medium flex items-center gap-1.5 transition-colors">
               <UploadCloud className="w-3.5 h-3.5" />
               <span>Tải file lên</span>
               <input
@@ -524,7 +512,7 @@ export const DataOnboardingTab: React.FC = () => {
                 setHasValidated(false);
                 setValidationErrors([]);
               }}
-              className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-semibold transition-colors"
+              className="px-2.5 py-1 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-xs font-medium transition-colors"
             >
               Nạp lại mẫu chuẩn
             </button>
@@ -533,19 +521,19 @@ export const DataOnboardingTab: React.FC = () => {
 
         {/* Textarea for CSV */}
         <textarea
-          rows={6}
+          rows={5}
           value={csvInput}
           onChange={(e) => {
             setCsvInput(e.target.value);
             setHasValidated(false);
           }}
-          className="w-full font-mono text-xs p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 leading-relaxed"
+          className="w-full font-mono text-xs p-2.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 leading-relaxed"
           placeholder="Dán nội dung CSV vào đây (bao gồm dòng tiêu đề)..."
         />
 
         {/* Action Controls */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="text-xs text-slate-400 flex items-center gap-1.5">
+        <div className="flex items-center justify-between pt-1">
+          <div className="text-xs text-slate-500 flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5" />
             <span>Quy tắc: Hỗ trợ chú thích bắt đầu bằng dấu #, phân tách bằng dấu phẩy.</span>
           </div>
@@ -553,7 +541,7 @@ export const DataOnboardingTab: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={handleValidate}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               Kiểm tra Dữ liệu (Validate)
@@ -563,10 +551,10 @@ export const DataOnboardingTab: React.FC = () => {
               <button
                 onClick={handleCommit}
                 disabled={hardErrorsCount > 0}
-                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all ${
+                className={`px-3.5 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors ${
                   hardErrorsCount > 0
                     ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                    : 'bg-brand-600 hover:bg-brand-700 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 }`}
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -580,16 +568,16 @@ export const DataOnboardingTab: React.FC = () => {
       {/* 4. Feedback Alert */}
       {commitFeedback && (
         <div
-          className={`p-4 rounded-xl border text-xs font-semibold flex items-center gap-2.5 ${
+          className={`p-3 rounded-md border text-xs font-medium flex items-center gap-2 ${
             commitFeedback.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
+              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800'
           }`}
         >
           {commitFeedback.type === 'success' ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
           ) : (
-            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
           )}
           <span>{commitFeedback.message}</span>
         </div>
@@ -597,14 +585,14 @@ export const DataOnboardingTab: React.FC = () => {
 
       {/* 5. Validation Result Summary & Row-by-Row Errors */}
       {hasValidated && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+        <div className="space-y-3">
+          <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+            <div className="flex items-center justify-between border-b pb-2 dark:border-slate-800">
+              <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <span>Kết quả Thẩm định Dữ liệu</span>
-                <span className="font-mono text-xs text-slate-400">({previewRows.length} dòng)</span>
+                <span className="font-mono text-xs text-slate-500">({previewRows.length} dòng)</span>
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 {hardErrorsCount === 0 ? (
                   <Badge variant="success">Hợp lệ 100%</Badge>
                 ) : (
@@ -619,45 +607,45 @@ export const DataOnboardingTab: React.FC = () => {
             {/* Error Detail Table */}
             {validationErrors.length > 0 ? (
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                <h4 className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  Báo cáo chi tiết lỗi theo từng dòng (Row-by-Row Error Report):
+                  Báo cáo chi tiết lỗi theo từng dòng:
                 </h4>
-                <div className="overflow-x-auto rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/30 dark:bg-rose-950/20">
+                <div className="overflow-x-auto rounded-md border border-rose-200 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/10">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-rose-100/60 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 font-semibold border-b border-rose-200 dark:border-rose-900">
+                    <thead className="bg-rose-100/50 dark:bg-rose-900/30 text-rose-800 dark:text-rose-200 font-semibold border-b border-rose-200 dark:border-rose-900">
                       <tr>
-                        <th className="py-2.5 px-3">Dòng</th>
-                        <th className="py-2.5 px-3">Cột (Field)</th>
-                        <th className="py-2.5 px-3">Mức độ</th>
-                        <th className="py-2.5 px-3">Lỗi chi tiết</th>
-                        <th className="py-2.5 px-3">Giá trị gốc</th>
+                        <th className="py-2 px-3">Dòng</th>
+                        <th className="py-2 px-3">Cột (Field)</th>
+                        <th className="py-2 px-3">Mức độ</th>
+                        <th className="py-2 px-3">Lỗi chi tiết</th>
+                        <th className="py-2 px-3">Giá trị gốc</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-rose-100 dark:divide-rose-900/40 font-mono">
                       {validationErrors.map((err, idx) => (
-                        <tr key={idx} className="hover:bg-rose-100/30">
-                          <td className="py-2 px-3 font-bold text-rose-900 dark:text-rose-200">
+                        <tr key={idx} className="hover:bg-rose-100/20">
+                          <td className="py-1.5 px-3 font-semibold text-rose-900 dark:text-rose-200">
                             #{err.rowNumber}
                           </td>
-                          <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-300">
+                          <td className="py-1.5 px-3 font-medium text-slate-800 dark:text-slate-300">
                             {err.field}
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1.5 px-3">
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              className={`px-1.5 py-0.2 rounded text-[10px] font-semibold ${
                                 err.severity === 'ERROR'
-                                  ? 'bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-200'
-                                  : 'bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800'
                               }`}
                             >
                               {err.severity}
                             </span>
                           </td>
-                          <td className="py-2 px-3 font-sans text-rose-800 dark:text-rose-300">
+                          <td className="py-1.5 px-3 font-sans text-rose-800 dark:text-rose-300">
                             {err.error}
                           </td>
-                          <td className="py-2 px-3 text-slate-500 dark:text-slate-400 truncate max-w-xs">
+                          <td className="py-1.5 px-3 text-slate-500 dark:text-slate-400 truncate max-w-xs">
                             {err.rawValue || '-'}
                           </td>
                         </tr>
@@ -667,33 +655,33 @@ export const DataOnboardingTab: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <div className="p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>Toàn bộ {previewRows.length} dòng dữ liệu đều vượt qua các bài kiểm tra logic và tính toàn vẹn khóa ngoại. Sẵn sàng Commit.</span>
               </div>
             )}
 
             {/* Preview Data Table */}
-            <div className="space-y-2 pt-2">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
+            <div className="space-y-1.5 pt-1">
+              <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Bảng xem trước dữ liệu (Preview):
               </h4>
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-800">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-850 text-slate-500 font-semibold border-b dark:border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                      <th className="py-2.5 px-3">#</th>
+                      <th className="py-2 px-3">#</th>
                       {parsedHeaders.map((h) => (
-                        <th key={h} className="py-2.5 px-3 font-mono">{h}</th>
+                        <th key={h} className="py-2 px-3 font-mono">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {previewRows.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="py-2 px-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                      <tr key={idx} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                        <td className="py-1.5 px-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
                         {parsedHeaders.map((h) => (
-                          <td key={h} className="py-2 px-3 text-slate-700 dark:text-slate-300 max-w-xs truncate">
+                          <td key={h} className="py-1.5 px-3 text-slate-700 dark:text-slate-300 max-w-xs truncate">
                             {row[h] || '-'}
                           </td>
                         ))}
@@ -708,55 +696,55 @@ export const DataOnboardingTab: React.FC = () => {
       )}
 
       {/* 6. Import Audit Trail History */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+        <div className="flex items-center justify-between border-b pb-2 dark:border-slate-800">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <History className="w-4 h-4 text-brand-500" />
+            <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <History className="w-4 h-4 text-slate-600 dark:text-slate-400" />
               Nhật ký Lịch sử Onboarding (Import Audit Trail)
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] text-slate-500 mt-0.5">
               Lưu vết thời điểm, người thực hiện, tệp tin và số dòng thành công/thất bại theo từng đợt import.
             </p>
           </div>
           <span className="text-xs font-mono text-slate-400">Spec v1.1 Mục 11</span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-md">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-850 text-slate-400 border-b dark:border-slate-800">
+            <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th className="py-2.5 px-3">Mã Batch</th>
-                <th className="py-2.5 px-3">Thực thể</th>
-                <th className="py-2.5 px-3">Tệp nguồn</th>
-                <th className="py-2.5 px-3">Thành công / Tổng</th>
-                <th className="py-2.5 px-3">Người thực hiện</th>
-                <th className="py-2.5 px-3">Thời gian</th>
-                <th className="py-2.5 px-3">Trạng thái</th>
+                <th className="py-2.5 px-3 font-semibold">Mã Batch</th>
+                <th className="py-2.5 px-3 font-semibold">Thực thể</th>
+                <th className="py-2.5 px-3 font-semibold">Tệp nguồn</th>
+                <th className="py-2.5 px-3 font-semibold">Thành công / Tổng</th>
+                <th className="py-2.5 px-3 font-semibold">Người thực hiện</th>
+                <th className="py-2.5 px-3 font-semibold">Thời gian</th>
+                <th className="py-2.5 px-3 font-semibold">Trạng thái</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
               {importHistory.map((h) => (
-                <tr key={h.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                  <td className="py-2.5 px-3 font-bold text-brand-600 dark:text-brand-400">
+                <tr key={h.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                  <td className="py-2 px-3 font-semibold text-slate-900 dark:text-slate-100">
                     {h.id}
                   </td>
-                  <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200 font-sans">
+                  <td className="py-2 px-3 font-medium text-slate-800 dark:text-slate-200 font-sans">
                     {h.entityType}
                   </td>
-                  <td className="py-2.5 px-3 text-slate-500 font-sans">
+                  <td className="py-2 px-3 text-slate-500 font-sans">
                     {h.fileName}
                   </td>
-                  <td className="py-2.5 px-3">
-                    <span className="text-emerald-600 font-bold">{h.successRows}</span> / {h.totalRows}
+                  <td className="py-2 px-3">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold">{h.successRows}</span> / {h.totalRows}
                   </td>
-                  <td className="py-2.5 px-3 font-sans text-slate-700 dark:text-slate-300">
+                  <td className="py-2 px-3 font-sans text-slate-700 dark:text-slate-300">
                     {h.importedBy}
                   </td>
-                  <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                  <td className="py-2 px-3 text-slate-500 text-[11px]">
                     {h.createdAt}
                   </td>
-                  <td className="py-2.5 px-3">
+                  <td className="py-2 px-3">
                     <Badge variant="success">COMMITTED</Badge>
                   </td>
                 </tr>

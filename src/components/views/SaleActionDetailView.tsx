@@ -142,19 +142,19 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
   }
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-200">
+    <div className="space-y-4 pb-8 animate-in fade-in duration-150">
       {/* Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300">
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               Quy trình Khắc phục Lỗi & Recheck v1.1
             </span>
             <span className="text-xs text-slate-400">
               {filteredActions.length} actions trong danh sách
             </span>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white mt-1">
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white mt-1">
             Chi tiết Corrective Action: {activeAction.code}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -166,20 +166,20 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
         {isHeadAuditor && activeAction.status !== 'VERIFIED_CLOSED' && activeAction.status !== 'WAIVED' && (
           <button
             onClick={() => setIsWaiveModalOpen(true)}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="px-2.5 py-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md border border-slate-300 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
-            Miễn trừ Action (Head Auditor)
+            Miễn trừ Action
           </button>
         )}
       </div>
 
       {statusMessage && (
         <div
-          className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+          className={`p-3 rounded-md text-xs font-medium flex items-center gap-2 ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200'
-              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200'
+              ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
+              : 'bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
           }`}
         >
           {statusMessage.type === 'success' ? (
@@ -192,38 +192,38 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
       )}
 
       {/* Main Split Layout: Left List Selector + Right Dual Pane Detail */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left Col: Action Selector List */}
-        <div className="lg:col-span-4 space-y-2.5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+        <div className="lg:col-span-4 space-y-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
             Danh sách Action ({filteredActions.length})
           </h3>
 
-          <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+          <div className="space-y-1.5 max-h-[calc(100vh-250px)] overflow-y-auto pr-1">
             {filteredActions.map((action) => {
               const isSelected = action.id === activeAction.id;
               return (
                 <div
                   key={action.id}
                   onClick={() => setSelectedActionId(action.id)}
-                  className={`p-3.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                  className={`p-3 rounded-md border text-xs cursor-pointer transition-colors ${
                     isSelected
-                      ? 'bg-brand-50/70 dark:bg-brand-950/40 border-brand-500 shadow-sm'
+                      ? 'bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-600 font-medium'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">
                       {action.code}
                     </span>
                     <ActionStatusBadge status={action.status} isOverdue={action.isOverdue} />
                   </div>
 
-                  <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                  <p className="font-medium text-slate-800 dark:text-slate-200 truncate">
                     {action.customerName}
                   </p>
 
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                     [{action.issueCode}] {action.issueName}
                   </p>
 
@@ -240,13 +240,13 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
         </div>
 
         {/* Right Col: Active Action Workflows */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className="lg:col-span-8 space-y-5">
           {/* Action Overview Card */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
               <div className="space-y-0.5">
-                <span className="text-[11px] font-bold text-slate-400">ACTION MÃ:</span>
-                <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase">Mã Action:</span>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   {activeAction.code}
                   <ActionStatusBadge status={activeAction.status} isOverdue={activeAction.isOverdue} />
                 </h2>
@@ -254,19 +254,19 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-500">Hạn chót:</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                <span className="font-mono font-medium text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px]">
                   {new Date(activeAction.dueDate).toLocaleString('vi-VN')}
                 </span>
               </div>
             </div>
 
             {/* Context details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="space-y-1">
                 <div className="text-slate-500 flex items-center gap-1.5">
-                  <Building className="w-3.5 h-3.5" />
+                  <Building className="w-3.5 h-3.5 text-slate-400" />
                   <span>Khách hàng:</span>
-                  <strong className="text-slate-900 dark:text-slate-100">
+                  <strong className="text-slate-900 dark:text-slate-100 font-semibold">
                     {activeAction.customerName}
                   </strong>
                 </div>
@@ -278,16 +278,16 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="text-slate-500 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5" />
+                  <User className="w-3.5 h-3.5 text-slate-400" />
                   <span>Auditor phụ trách:</span>
-                  <strong className="text-brand-600 dark:text-brand-400">
+                  <strong className="text-slate-800 dark:text-slate-200">
                     {activeAction.auditorName}
                   </strong>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span>Mức độ rủi ro:</span>
+                  <span>Mức độ:</span>
                   <SeverityBadge severity={activeAction.severity} />
                 </div>
                 <div className="text-slate-500">
@@ -297,11 +297,11 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
             </div>
 
             {/* Completion Criteria */}
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-              <span className="font-bold text-slate-700 dark:text-slate-300 uppercase text-[10px] tracking-wider block">
+            <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-md border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+              <span className="font-semibold text-slate-600 dark:text-slate-400 uppercase text-[10px] tracking-wider block">
                 Tiêu chí hoàn tất & Hướng dẫn sửa lỗi từ Auditor:
               </span>
-              <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+              <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-normal">
                 {activeAction.completionCriteria}
               </p>
               {activeAction.guidanceNotes && (
@@ -313,10 +313,10 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
             {/* Waive reason notice if waived */}
             {activeAction.status === 'WAIVED' && (
-              <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-xl text-xs text-gray-700 dark:text-gray-300">
-                <p className="font-bold">Đã được Head Auditor phê duyệt Miễn trừ (WAIVED):</p>
+              <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-md text-xs text-slate-700 dark:text-slate-300">
+                <p className="font-semibold">Đã được Head Auditor phê duyệt Miễn trừ (WAIVED):</p>
                 <p className="mt-0.5">Lý do: {activeAction.waiveReason}</p>
-                <p className="text-[10px] text-gray-400 mt-1">
+                <p className="text-[10px] text-slate-400 mt-1">
                   Người duyệt: {activeAction.waiveApprovedBy}
                 </p>
               </div>
@@ -324,16 +324,16 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
           </div>
 
           {/* DUAL PANE WORKFLOW CONTAINER */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* ================= PANE 1: SALE SUBMISSION SECTION ================= */}
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-amber-200/80 dark:border-amber-900/60 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
+                  <div className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px]">
                     1
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                       Khu vực Sale Khắc phục
                     </h3>
                     <p className="text-[10px] text-slate-400">
@@ -344,14 +344,14 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
                 {activeAction.saleMarkedDone && (
                   <Badge variant="warning" size="xs">
-                    Đã gửi lúc {new Date(activeAction.saleMarkedDoneAt || '').toLocaleTimeString('vi-VN')}
+                    Đã gửi {new Date(activeAction.saleMarkedDoneAt || '').toLocaleTimeString('vi-VN')}
                   </Badge>
                 )}
               </div>
 
               {/* RBAC notice if current user is not the sale owner */}
               {!isSaleOwner && (activeAction.status === 'OPEN' || activeAction.status === 'REOPENED') && (
-                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5 border border-amber-200/80 dark:border-amber-800/60">
+                <div className="p-2.5 rounded-md bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5 border border-amber-200/80 dark:border-amber-800/60">
                   <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                   <span>
                     Chỉ Sale phụ trách (<strong>{activeAction.saleName}</strong>) mới có quyền gửi xác nhận khắc phục.
@@ -361,8 +361,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
               {/* State-specific UI for Sale section */}
               {activeAction.status === 'VERIFIED_CLOSED' ? (
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-2">
-                  <div className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+                <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-emerald-600 font-medium">
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Action đã đóng (VERIFIED_CLOSED)</span>
                   </div>
@@ -375,25 +375,25 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   )}
                 </div>
               ) : activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED' ? (
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-semibold">
+                <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
                     <ShieldCheck className="w-4 h-4" />
                     <span>Action đã được Miễn trừ (WAIVED)</span>
                   </div>
                   <p>Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}</p>
                 </div>
               ) : activeAction.status === 'IN_RECHECK' ? (
-                <div className="space-y-3 text-xs">
-                  <div className="p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-slate-700 dark:text-slate-300 space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300 font-semibold">
-                      <Clock className="w-4 h-4" />
+                <div className="space-y-2.5 text-xs">
+                  <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
                       <span>Auditor đang kiểm tra (IN_RECHECK)</span>
                     </div>
-                    <p className="text-slate-600 dark:text-slate-400">
+                    <p className="text-slate-500 text-[11px]">
                       Sale không thể chỉnh sửa action trong lúc Auditor đang nghiệm thu.
                     </p>
                     {activeAction.saleNotes && (
-                      <p className="text-slate-800 dark:text-slate-200 font-medium">
+                      <p className="text-slate-800 dark:text-slate-200 font-medium mt-1">
                         Ghi chú đã nộp: "{activeAction.saleNotes}"
                       </p>
                     )}
@@ -404,9 +404,9 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 </div>
               ) : activeAction.status === 'SALE_MARKED_DONE' ? (
                 /* Display Submitted Sale Data */
-                <div className="space-y-3 text-xs">
-                  <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+                <div className="space-y-2.5 text-xs">
+                  <div className="p-3 rounded-md bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-600 font-medium">
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Sale đã đánh dấu hoàn thành</span>
                     </div>
@@ -422,7 +422,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   />
 
                   {/* Clarification per spec */}
-                  <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-850 text-[11px] text-slate-500 border border-slate-200/60 dark:border-slate-800 flex items-start gap-1.5">
+                  <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-850 text-[11px] text-slate-500 border border-slate-200 dark:border-slate-800 flex items-start gap-1.5">
                     <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                     <span>
                       Theo Spec v1.1, Sale <strong>không thể tự đóng action</strong>. Action đang ở trạng thái{' '}
@@ -432,18 +432,18 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 </div>
               ) : (
                 /* Sale submission form: strictly allowed only on OPEN and REOPENED */
-                <form onSubmit={handleSaleSubmit} className="space-y-3.5 text-xs">
+                <form onSubmit={handleSaleSubmit} className="space-y-3 text-xs">
                   {/* Checkbox "Tôi đã thực hiện" strictly required per spec */}
-                  <label className={`flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors ${isSaleOwner ? 'cursor-pointer hover:border-amber-500' : 'opacity-60 cursor-not-allowed'}`}>
+                  <label className={`flex items-start gap-2.5 p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors ${isSaleOwner ? 'cursor-pointer hover:border-slate-400' : 'opacity-60 cursor-not-allowed'}`}>
                     <input
                       type="checkbox"
                       checked={saleChecked}
                       onChange={(e) => setSaleChecked(e.target.checked)}
                       disabled={!isSaleOwner}
-                      className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      className="mt-0.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                     />
                     <div>
-                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                      <span className="font-medium text-slate-900 dark:text-slate-100">
                         Tôi đã thực hiện khắc phục
                       </span>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -453,7 +453,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   </label>
 
                   <div>
-                    <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+                    <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
                       Ghi chú kết quả ngắn (Bắt buộc)
                     </label>
                     <textarea
@@ -462,7 +462,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       value={saleNotes}
                       onChange={(e) => setSaleNotes(e.target.value)}
                       disabled={!isSaleOwner}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
+                      className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60"
                     />
                   </div>
 
@@ -476,7 +476,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   <button
                     type="submit"
                     disabled={!isSaleOwner || !saleChecked || !saleNotes.trim()}
-                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 disabled:opacity-40 text-white font-medium rounded-md transition-colors flex items-center justify-center gap-1.5"
                   >
                     <Send className="w-3.5 h-3.5" />
                     Gửi Auditor Recheck (SALE_MARKED_DONE)
@@ -486,14 +486,14 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
             </div>
 
             {/* ================= PANE 2: AUDITOR RECHECK SECTION ================= */}
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-purple-200/80 dark:border-purple-900/60 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold text-xs">
+                  <div className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px]">
                     2
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                       Khu vực Auditor Recheck
                     </h3>
                     <p className="text-[10px] text-slate-400">
@@ -502,15 +502,15 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                   </div>
                 </div>
 
-                <Badge variant="purple" size="xs">
+                <Badge variant="neutral" size="xs">
                   Auditor: {activeAction.auditorName}
                 </Badge>
               </div>
 
               {/* RBAC notice if current user is not assigned auditor */}
               {!isAssignedAuditor && activeAction.status !== 'VERIFIED_CLOSED' && (
-                <div className="p-2.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 text-xs flex items-center gap-1.5 border border-purple-200/80 dark:border-purple-800/60">
-                  <Lock className="w-3.5 h-3.5 shrink-0 text-purple-600" />
+                <div className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1.5 border border-slate-200 dark:border-slate-800">
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                   <span>
                     Chỉ Auditor phụ trách (<strong>{activeAction.auditorName}</strong>) mới có quyền thực hiện recheck.
                   </span>
@@ -519,66 +519,66 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
               {/* Closed status display */}
               {activeAction.status === 'VERIFIED_CLOSED' ? (
-                <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-center space-y-2">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                  <h4 className="font-bold text-emerald-900 dark:text-emerald-200 text-sm">
+                <div className="p-4 rounded-md bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-xs text-center space-y-1.5">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
+                  <h4 className="font-semibold text-emerald-900 dark:text-emerald-200 text-xs">
                     Action đã được xác nhận ĐÓNG (VERIFIED_CLOSED)
                   </h4>
-                  <p className="text-emerald-700 dark:text-emerald-300">
+                  <p className="text-emerald-700 dark:text-emerald-300 text-[11px]">
                     Auditor đã kiểm tra và ghi nhận cải thiện (IMPROVED).
                   </p>
                 </div>
               ) : activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED' ? (
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-center space-y-2">
-                  <ShieldCheck className="w-8 h-8 text-slate-400 mx-auto" />
-                  <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-center space-y-1.5">
+                  <ShieldCheck className="w-6 h-6 text-slate-400 mx-auto" />
+                  <h4 className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
                     Action đã được Miễn trừ (WAIVED)
                   </h4>
-                  <p className="text-slate-500">
+                  <p className="text-slate-500 text-[11px]">
                     Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}
                   </p>
                 </div>
               ) : activeAction.status === 'OPEN' || activeAction.status === 'REOPENED' ? (
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-2 text-center">
-                  <Clock className="w-8 h-8 text-slate-400 mx-auto" />
-                  <h4 className="font-bold text-slate-700 dark:text-slate-300">
+                <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1 text-center">
+                  <Clock className="w-6 h-6 text-slate-400 mx-auto" />
+                  <h4 className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
                     Chờ Sale khắc phục ({activeAction.status})
                   </h4>
-                  <p>
+                  <p className="text-[11px]">
                     Auditor chỉ có thể bắt đầu recheck sau khi Sale đã tick "Tôi đã thực hiện" (trạng thái SALE_MARKED_DONE).
                   </p>
                 </div>
               ) : activeAction.status === 'SALE_MARKED_DONE' ? (
-                <div className="p-4 bg-purple-50/70 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800 space-y-3">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 rounded-md border border-amber-200 dark:border-amber-800 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                     <div>
-                      <h4 className="font-bold text-purple-950 dark:text-purple-200 text-xs">
+                      <h4 className="font-semibold text-amber-950 dark:text-amber-200 text-xs">
                         Sale đã nộp xác nhận khắc phục (SALE_MARKED_DONE)
                       </h4>
-                      <p className="text-[11px] text-purple-700 dark:text-purple-300 mt-0.5">
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
                         Bấm "Bắt đầu Recheck" để chuyển trạng thái sang IN_RECHECK và mở biểu mẫu đánh giá.
                       </p>
                     </div>
                     <button
                       onClick={handleStartRecheck}
                       disabled={!isAssignedAuditor}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition-colors disabled:opacity-50 shrink-0 shadow-sm"
+                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-medium rounded-md text-xs transition-colors disabled:opacity-40 shrink-0"
                     >
-                      Bắt đầu Recheck (IN_RECHECK)
+                      Bắt đầu Recheck
                     </button>
                   </div>
                 </div>
               ) : (
                 /* Recheck execution form: active only when IN_RECHECK */
-                <div className="space-y-4 text-xs">
-                  <div className="p-2.5 rounded-lg bg-purple-100/60 dark:bg-purple-950/50 text-purple-900 dark:text-purple-200 text-[11px] font-semibold flex items-center gap-1.5 border border-purple-200 dark:border-purple-800">
-                    <Clock className="w-3.5 h-3.5 shrink-0 text-purple-600" />
+                <div className="space-y-3 text-xs">
+                  <div className="p-2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-medium flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-slate-500" />
                     <span>Action đang trong phiên kiểm tra (IN_RECHECK). Vui lòng đưa ra kết luận:</span>
                   </div>
 
                   {/* Verdict Selection: IMPROVED vs NOT_IMPROVED */}
-                  <div className="space-y-1.5">
-                    <label className="font-semibold block text-slate-700 dark:text-slate-300">
+                  <div className="space-y-1">
+                    <label className="font-medium block text-slate-700 dark:text-slate-300">
                       Kết luận Recheck của Auditor:
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -586,14 +586,14 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                         type="button"
                         onClick={() => setRecheckVerdict('IMPROVED')}
                         disabled={!isAssignedAuditor}
-                        className={`p-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${
+                        className={`p-2.5 rounded-md border text-left transition-colors disabled:opacity-60 ${
                           recheckVerdict === 'IMPROVED'
-                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold dark:bg-emerald-950/60 dark:text-emerald-300'
-                            : 'border-slate-200 dark:border-slate-800 text-slate-600'
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-medium dark:bg-emerald-950/40 dark:text-emerald-300'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                           <span>Cải thiện (IMPROVED)</span>
                         </div>
                         <p className="text-[10px] text-slate-400 font-normal mt-0.5">
@@ -605,14 +605,14 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                         type="button"
                         onClick={() => setRecheckVerdict('NOT_IMPROVED')}
                         disabled={!isAssignedAuditor}
-                        className={`p-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${
+                        className={`p-2.5 rounded-md border text-left transition-colors disabled:opacity-60 ${
                           recheckVerdict === 'NOT_IMPROVED'
-                            ? 'bg-rose-50 border-rose-500 text-rose-800 font-bold dark:bg-rose-950/60 dark:text-rose-300'
-                            : 'border-slate-200 dark:border-slate-800 text-slate-600'
+                            ? 'bg-rose-50 border-rose-500 text-rose-800 font-medium dark:bg-rose-950/40 dark:text-rose-300'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
-                          <XCircle className="w-4 h-4 text-rose-600" />
+                          <XCircle className="w-3.5 h-3.5 text-rose-600" />
                           <span>Chưa đạt (NOT_IMPROVED)</span>
                         </div>
                         <p className="text-[10px] text-slate-400 font-normal mt-0.5">
@@ -624,8 +624,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
                   {/* When NOT_IMPROVED: Mandatory new deadline per Spec */}
                   {recheckVerdict === 'NOT_IMPROVED' && (
-                    <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-800 space-y-2">
-                      <label className="font-bold text-rose-900 dark:text-rose-200 block">
+                    <div className="p-2.5 bg-rose-50/70 dark:bg-rose-950/20 rounded-md border border-rose-200 dark:border-rose-800 space-y-1.5">
+                      <label className="font-semibold text-rose-900 dark:text-rose-200 block text-xs">
                         Hạn chót mới cho Sale xử lý lại (Bắt buộc theo Spec):
                       </label>
                       <input
@@ -633,13 +633,13 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                         value={nextDueDate}
                         onChange={(e) => setNextDueDate(e.target.value)}
                         disabled={!isAssignedAuditor}
-                        className="w-full p-2 rounded-lg border border-rose-300 dark:bg-slate-800 text-xs font-semibold"
+                        className="w-full px-2.5 py-1.5 rounded-md border border-rose-300 dark:bg-slate-800 text-xs font-medium"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+                    <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
                       Ghi nhận kết quả & Hướng dẫn chỉnh lỗi chi tiết
                     </label>
                     <textarea
@@ -648,7 +648,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       value={recheckNotes}
                       onChange={(e) => setRecheckNotes(e.target.value)}
                       disabled={!isAssignedAuditor}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+                      className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60"
                     />
                   </div>
 
@@ -663,10 +663,10 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                     type="button"
                     onClick={handleAuditorSubmit}
                     disabled={!isAssignedAuditor || !recheckNotes.trim()}
-                    className={`w-full py-2.5 text-white font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+                    className={`w-full py-2 text-white font-medium rounded-md transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 ${
                       recheckVerdict === 'IMPROVED'
-                        ? 'bg-emerald-600 hover:bg-emerald-500'
-                        : 'bg-rose-600 hover:bg-rose-500'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : 'bg-rose-600 hover:bg-rose-700'
                     }`}
                   >
                     {recheckVerdict === 'IMPROVED' ? (
@@ -688,8 +688,8 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
           {/* Recheck History Audit Trail Table */}
           {activeAction.rechecks.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2.5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Lịch sử các lần Recheck ({activeAction.rechecks.length})
               </h3>
 
@@ -697,11 +697,11 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 {activeAction.rechecks.map((rc) => (
                   <div
                     key={rc.id}
-                    className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs flex items-start justify-between gap-3"
+                    className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs flex items-start justify-between gap-3"
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">
                           Lần {rc.recheckNumber}
                         </span>
                         <Badge
@@ -714,13 +714,13 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                           bởi {rc.auditorName} • {new Date(rc.recheckDate).toLocaleString('vi-VN')}
                         </span>
                       </div>
-                      <p className="text-slate-700 dark:text-slate-300 font-medium">{rc.notes}</p>
+                      <p className="text-slate-700 dark:text-slate-300 font-normal">{rc.notes}</p>
                     </div>
 
                     {rc.nextDueDate && (
                       <div className="text-right shrink-0">
                         <span className="text-[10px] text-slate-400 block">Hạn mới:</span>
-                        <span className="font-mono font-bold text-rose-600">
+                        <span className="font-mono font-semibold text-rose-600 text-xs">
                           {new Date(rc.nextDueDate).toLocaleDateString('vi-VN')}
                         </span>
                       </div>
@@ -741,17 +741,17 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
         subtitle={`Miễn trừ nghĩa vụ khắc phục đối với ${activeAction.code}`}
         maxWidth="md"
       >
-        <div className="space-y-4 text-xs">
-          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200">
+        <div className="space-y-3 text-xs">
+          <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
             <p className="font-semibold">Quyền hạn Head Auditor:</p>
-            <p className="mt-1">
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
               Thao tác Miễn trừ (WAIVED) sẽ đóng action mà không tính vào tỷ lệ lỗi của Sale hoặc sản lượng auditor. 
               Bắt buộc phải ghi nhận lý do chính đáng và lưu audit trail bất biến.
             </p>
           </div>
 
           <div>
-            <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
+            <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
               Lý do miễn trừ (Bắt buộc):
             </label>
             <textarea
@@ -759,7 +759,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
               placeholder="VD: Khách hàng đã gửi thông báo phá sản, hoặc đã giải quyết qua kênh khiếu nại riêng có biên bản..."
               value={waiveReason}
               onChange={(e) => setWaiveReason(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs"
+              className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
 
@@ -767,7 +767,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
             <button
               type="button"
               onClick={() => setIsWaiveModalOpen(false)}
-              className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100"
+              className="px-3 py-1.5 rounded-md text-slate-600 dark:text-slate-400 hover:bg-slate-100 text-xs"
             >
               Hủy
             </button>
@@ -775,7 +775,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
               type="button"
               onClick={handleConfirmWaive}
               disabled={!waiveReason.trim()}
-              className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg disabled:opacity-50"
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-md text-xs disabled:opacity-40 transition-colors"
             >
               Xác nhận Miễn trừ
             </button>

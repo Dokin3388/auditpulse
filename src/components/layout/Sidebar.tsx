@@ -9,7 +9,6 @@ import {
   TrendingUp,
   FileBarChart,
   Settings,
-  HelpCircle,
 } from 'lucide-react';
 
 export type NavTab =
@@ -52,35 +51,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       label: 'Audit Queue',
       icon: Layers,
       badge: pendingQueueCount > 0 ? pendingQueueCount : null,
-      badgeColor: 'bg-brand-500 text-white',
+      badgeColor: 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200',
     },
     {
       id: 'action-detail' as NavTab,
       label: 'Sale Action',
       icon: CheckSquare,
       badge: filteredActions.length > 0 ? filteredActions.length : null,
-      badgeColor: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
+      badgeColor: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
     },
     {
       id: 'recheck-today' as NavTab,
       label: 'Recheck hôm nay',
       icon: Clock,
       badge: urgentRecheckCount > 0 ? urgentRecheckCount : null,
-      badgeColor: 'bg-amber-500 text-white font-bold',
+      badgeColor: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
     },
     {
       id: 'portfolio' as NavTab,
       label: 'Auditor Portfolio',
       icon: Users2,
       badge: unreviewedTeamAlerts > 0 ? `${unreviewedTeamAlerts} đổi team` : null,
-      badgeColor: 'bg-rose-500 text-white',
+      badgeColor: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200',
     },
     {
       id: 'performance' as NavTab,
       label: 'Hiệu suất Auditor',
       icon: TrendingUp,
-      badge: 'Outcome',
-      badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+      badge: null,
     },
     {
       id: 'reports' as NavTab,
@@ -97,9 +95,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   ];
 
   return (
-    <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 min-h-[calc(100vh-101px)] transition-colors">
-      <div className="p-4 flex-1 space-y-1">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-3 py-2">
+    <aside className="w-56 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 min-h-[calc(100vh-90px)] transition-colors">
+      <div className="p-3 flex-1 space-y-0.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5 py-1.5">
           Phân hệ tác vụ
         </div>
 
@@ -110,24 +108,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs transition-colors text-left ${
                 isActive
-                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/80 dark:text-brand-300 shadow-sm border border-brand-200/60 dark:border-brand-800'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold border-l-2 border-slate-900 dark:border-slate-100'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-850'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 min-w-0">
                 <Icon
-                  className={`w-4 h-4 ${
-                    isActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400'
+                  className={`w-4 h-4 shrink-0 ${
+                    isActive
+                      ? 'text-slate-900 dark:text-white'
+                      : 'text-slate-400 group-hover:text-slate-600'
                   }`}
                 />
-                <span>{item.label}</span>
+                <span className="truncate">{item.label}</span>
               </div>
-              {item.badge && (
+              {item.badge !== null && item.badge !== undefined && (
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                    item.badgeColor || 'bg-slate-100 text-slate-600'
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-medium shrink-0 ml-1.5 ${
+                    item.badgeColor || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                   }`}
                 >
                   {item.badge}
@@ -138,24 +138,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         })}
       </div>
 
-      {/* Role Notice Card */}
-      <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850/50 m-3 rounded-xl border">
-        <div className="flex items-start gap-2 text-xs">
-          <HelpCircle className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-bold text-slate-800 dark:text-slate-200">
-              Quyền: {currentUser.role}
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-              {currentUser.role === 'SALE'
-                ? 'Chỉ hiển thị khách & việc được phân công của bạn.'
-                : currentUser.role === 'AUDITOR'
-                ? 'Portfolio cố định theo phân bổ của Head Auditor.'
-                : currentUser.role === 'TEAM_LEAD'
-                ? 'Ẩn hội thoại/evidence nhạy cảm theo Spec.'
-                : 'Đầy đủ quyền cấu hình và duyệt nghiệp vụ.'}
-            </p>
-          </div>
+      {/* Footer info */}
+      <div className="p-3 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 space-y-1.5">
+        <div className="flex items-center justify-between px-1">
+          <span className="font-medium text-slate-600 dark:text-slate-400">AuditFlow Spec</span>
+          <span className="font-mono text-[10px]">v1.1</span>
+        </div>
+        <div className="px-1 text-[10px] text-slate-400 leading-tight">
+          Role: <strong className="text-slate-600 dark:text-slate-300">{currentUser.role}</strong>
         </div>
       </div>
     </aside>

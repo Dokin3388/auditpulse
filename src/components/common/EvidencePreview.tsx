@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Evidence } from '../../types';
-import { FileText, Image as ImageIcon, ExternalLink, X, ShieldCheck, Clock, User } from 'lucide-react';
+import { FileText, ExternalLink, X, ShieldCheck, Clock, User } from 'lucide-react';
 
 interface EvidencePreviewProps {
   evidenceList: Evidence[];
@@ -47,17 +47,17 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-          <ShieldCheck className="w-4 h-4 text-brand-600" />
+        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
           {title} ({evidenceList.length})
         </h4>
         {allowAdd && !readOnly && (
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 inline-flex items-center gap-1"
+            className="text-xs font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white inline-flex items-center gap-1"
           >
             + Tải lên bằng chứng
           </button>
@@ -65,40 +65,39 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
       </div>
 
       {evidenceList.length === 0 ? (
-        <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-lg p-4 text-center text-xs text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-md p-3 text-center text-xs text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">
           Chưa có file hoặc ảnh bằng chứng nào được tải lên.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {evidenceList.map((item) => (
             <div
               key={item.id}
               onClick={() => setSelectedEvidence(item)}
-              className="group border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-850 rounded-lg p-2.5 flex items-start gap-3 hover:border-brand-500 hover:shadow-sm transition-all cursor-pointer"
+              className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-md p-2.5 flex items-start gap-2.5 hover:border-slate-300 dark:hover:border-slate-700 transition-colors cursor-pointer"
             >
-              <div className="w-12 h-12 rounded bg-slate-100 dark:bg-slate-800 flex-shrink-0 flex items-center justify-center overflow-hidden border border-slate-200/80 dark:border-slate-700">
+              <div className="w-10 h-10 rounded bg-slate-100 dark:bg-slate-800 shrink-0 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
                 {item.type === 'IMAGE' ? (
                   <img
                     src={item.thumbnailUrl || item.fileUrl}
                     alt={item.caption || item.fileName}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    className="w-full h-full object-cover"
                   />
                 ) : (
-                  <FileText className="w-6 h-6 text-slate-400 group-hover:text-brand-500 transition-colors" />
+                  <FileText className="w-5 h-5 text-slate-400" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-brand-600">
+                <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
                   {item.caption || item.fileName}
                 </p>
-                <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
-                  <span>{item.fileSize || 'Link'}</span>
-                  <span>•</span>
-                  <span>{new Date(item.uploadedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                  <span>{item.type}</span>
+                  {item.fileSize && <span>• {item.fileSize}</span>}
                 </div>
-                <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  <User className="w-3 h-3 text-slate-400" />
-                  <span className="truncate">{item.uploadedByName}</span>
+                <div className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400">
+                  <User className="w-2.5 h-2.5 text-slate-400" />
+                  <span className="truncate">{item.uploadedByName} ({item.uploadedByRole})</span>
                 </div>
               </div>
             </div>
@@ -106,15 +105,16 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
         </div>
       )}
 
-      {/* Add Modal */}
+      {/* Upload Modal */}
       {isAdding && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Đính kèm bằng chứng khắc phục
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40">
+          <div className="bg-white dark:bg-slate-900 rounded-lg max-w-md w-full p-4 border border-slate-200 dark:border-slate-800 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between border-b pb-2.5 dark:border-slate-800">
+              <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                Bổ sung Bằng chứng / Biên bản (Tối giản)
               </h3>
               <button
+                type="button"
                 onClick={() => setIsAdding(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
@@ -122,61 +122,61 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5 text-xs">
               <div>
-                <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                  Mô tả / Nội dung bằng chứng *
+                <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-1">
+                  Mô tả bằng chứng / Chú thích *
                 </label>
                 <input
                   type="text"
-                  placeholder="VD: Ảnh chụp màn hình chốt hợp đồng Zalo..."
+                  placeholder="Ví dụ: Ảnh chụp màn hình email gửi báo giá chuẩn cho khách"
                   value={newCaption}
                   onChange={(e) => setNewCaption(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                  Loại tài liệu
+                <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-1">
+                  Loại bằng chứng
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex gap-2">
                   {(['IMAGE', 'DOCUMENT', 'LINK'] as const).map((t) => (
                     <button
                       key={t}
                       type="button"
                       onClick={() => setNewType(t)}
-                      className={`text-xs py-1.5 rounded border text-center transition-all ${
+                      className={`flex-1 py-1 text-xs rounded border transition-colors ${
                         newType === t
-                          ? 'bg-brand-50 border-brand-500 text-brand-700 dark:bg-brand-950 dark:text-brand-300 font-medium'
-                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                          ? 'border-slate-900 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
                       }`}
                     >
-                      {t === 'IMAGE' ? 'Ảnh / Chụp MH' : t === 'DOCUMENT' ? 'File PDF' : 'Liên kết'}
+                      {t}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                  URL ảnh / tài liệu (Tùy chọn)
+                <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-1">
+                  URL / Đường dẫn file (tùy chọn)
                 </label>
                 <input
                   type="text"
-                  placeholder="Để trống sẽ dùng ảnh minh họa thực tế"
+                  placeholder="Để trống sẽ dùng link mẫu demo"
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t dark:border-slate-800">
+            <div className="flex justify-end gap-2 pt-2 border-t dark:border-slate-800 text-xs">
               <button
                 type="button"
                 onClick={() => setIsAdding(false)}
-                className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                className="px-3 py-1.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
               >
                 Hủy
               </button>
@@ -184,76 +184,90 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
                 type="button"
                 onClick={handleCreateMockEvidence}
                 disabled={!newCaption.trim()}
-                className="px-4 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+                className={`px-3 py-1.5 text-white font-medium rounded-md transition-colors ${
+                  newCaption.trim()
+                    ? 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900'
+                    : 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                }`}
               >
-                Tải lên
+                Lưu bằng chứng
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Lightbox / Detail Modal */}
+      {/* Preview Detail Modal */}
       {selectedEvidence && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/75 backdrop-blur-md">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50">
+          <div className="bg-white dark:bg-slate-900 rounded-lg max-w-2xl w-full p-4 border border-slate-200 dark:border-slate-800 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between border-b pb-2 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-brand-600" />
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate max-w-md">
+                <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                   {selectedEvidence.caption || selectedEvidence.fileName}
-                </h3>
+                </span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  {selectedEvidence.type}
+                </span>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedEvidence(null)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-md"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Content Preview */}
-            <div className="p-4 bg-slate-950 flex items-center justify-center max-h-[460px] overflow-hidden">
+            <div className="space-y-2">
               {selectedEvidence.type === 'IMAGE' ? (
-                <img
-                  src={selectedEvidence.fileUrl}
-                  alt={selectedEvidence.caption}
-                  className="max-h-[440px] max-w-full object-contain rounded"
-                />
+                <div className="rounded border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-100 dark:bg-slate-950 max-h-96 flex items-center justify-center">
+                  <img
+                    src={selectedEvidence.fileUrl}
+                    alt={selectedEvidence.caption}
+                    className="max-h-96 w-auto object-contain"
+                  />
+                </div>
               ) : (
-                <div className="py-16 text-center text-slate-300 space-y-3">
-                  <FileText className="w-16 h-16 mx-auto text-brand-400" />
-                  <p className="text-sm font-medium">{selectedEvidence.fileName}</p>
-                  <p className="text-xs text-slate-400">{selectedEvidence.fileSize}</p>
+                <div className="p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded bg-slate-50 dark:bg-slate-850 text-center space-y-2">
+                  <FileText className="w-10 h-10 text-slate-400 mx-auto" />
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {selectedEvidence.fileName}
+                  </p>
+                  <a
+                    href={selectedEvidence.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-slate-700 hover:underline dark:text-slate-300"
+                  >
+                    <span>Mở file đính kèm</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
                 </div>
               )}
-            </div>
 
-            {/* Metadata Footer per Spec */}
-            <div className="px-5 py-3 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 text-xs flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-4 text-slate-500 dark:text-slate-400">
+              <div className="p-2.5 bg-slate-50 dark:bg-slate-850 rounded border border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
                 <div className="flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5" />
+                  <User className="w-3 h-3 text-slate-400" />
                   <span>
-                    Người tải: <strong className="text-slate-700 dark:text-slate-200">{selectedEvidence.uploadedByName}</strong> ({selectedEvidence.uploadedByRole})
+                    Người tải: <strong>{selectedEvidence.uploadedByName}</strong> ({selectedEvidence.uploadedByRole})
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" />
+                  <Clock className="w-3 h-3 text-slate-400" />
                   <span>{new Date(selectedEvidence.uploadedAt).toLocaleString('vi-VN')}</span>
                 </div>
               </div>
+            </div>
 
-              <a
-                href={selectedEvidence.fileUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 px-3 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:text-brand-600 hover:border-brand-500 font-medium text-xs transition-colors"
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setSelectedEvidence(null)}
+                className="px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Mở link gốc
-              </a>
+                Đóng
+              </button>
             </div>
           </div>
         </div>
