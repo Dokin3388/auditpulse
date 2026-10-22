@@ -41,6 +41,7 @@ import {
 import {
   getAuditQueue,
   getAppUsers,
+  getIssueDefinitions,
   getAuditorAssignments,
   getCorrectiveActions,
   createAssignment,
@@ -213,18 +214,20 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
     void Promise.allSettled([
       getAppUsers(),
+      getIssueDefinitions(),
       getAuditQueue(),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
     ])
-      .then(([usersResult, queueResult, actionResult, assignmentResult, rescueResult]) => {
+      .then(([usersResult, issuesResult, queueResult, actionResult, assignmentResult, rescueResult]) => {
         if (cancelled) return;
         if (usersResult.status === 'fulfilled') {
           setAllUsers(usersResult.value);
           const sessionUser = usersResult.value.find((user) => user.email.toLowerCase() === initialUser?.email.toLowerCase());
           if (sessionUser) setCurrentUser(sessionUser);
         }
+        if (issuesResult.status === 'fulfilled') setIssueDefinitions(issuesResult.value);
         if (queueResult.status === 'fulfilled') {
           setQueueItems(queueResult.value);
         }
@@ -962,3 +965,4 @@ export const useAuditStore = () => {
   }
   return context;
 };
+
