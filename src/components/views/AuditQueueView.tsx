@@ -45,7 +45,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
   // Reassignment modal state
   const [reassignItem, setReassignItem] = useState<AuditQueueItem | null>(null);
-  const [newAuditorId, setNewAuditorId] = useState('AUD-01');
+  const [newAuditorId, setNewAuditorId] = useState('');
   const [reassignReason, setReassignReason] = useState('');
 
   // Apply filters
@@ -86,11 +86,16 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
   // Auditor list for reassignment
   const auditorOptions = allUsers.filter((u) => u.role === 'AUDITOR');
+  const teamOptions = useMemo(
+    () => [...new Map(allUsers.filter((u) => u.role === 'SALE' && u.teamId && u.teamName).map((u) => [u.teamId, { id: u.teamId!, name: u.teamName! }])).values()]
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
+    [allUsers]
+  );
 
   const handleOpenReassign = (item: AuditQueueItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setReassignItem(item);
-    setNewAuditorId(item.assignedAuditorId || 'AUD-01');
+    setNewAuditorId(item.assignedAuditorId || auditorOptions[0]?.id || '');
     setReassignReason('');
   };
 
@@ -157,10 +162,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Team Sale</option>
-              <option value="TEAM-NORTH">Team B2B Miền Bắc</option>
-              <option value="TEAM-ENT">Team Enterprise</option>
-              <option value="TEAM-KEY">Team Key Account</option>
-              <option value="TEAM-SOUTH">Team B2B Miền Nam</option>
+              {teamOptions.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           </div>
 
@@ -172,9 +174,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Auditor</option>
-              <option value="AUD-01">Linh Nguyễn (AUD-01)</option>
-              <option value="AUD-02">Huy Trần (AUD-02)</option>
-              <option value="AUD-03">Trang Đỗ (AUD-03)</option>
+              {auditorOptions.map((auditor) => <option key={auditor.id} value={auditor.id}>{auditor.name} ({auditor.auditorId || auditor.id})</option>)}
               <option value="UNASSIGNED">Chưa phân công (UNASSIGNED)</option>
             </select>
           </div>
@@ -430,3 +430,4 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     </div>
   );
 };
+
