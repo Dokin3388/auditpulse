@@ -216,10 +216,13 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               onChange={(e) => {
                 const nextTag = e.target.value;
                 setSelectedTag(nextTag);
-                // A risk-tag search is normally a cross-day investigation.
-                // If the date was only implicit (latest day), broaden it so
-                // tags from older available audit days are not hidden.
-                if (nextTag !== 'ALL' && !selectedAuditDate) setShowAllDates(true);
+                // A risk-tag search is a cross-day investigation by default.
+                // The newest date is auto-filled for the daily queue, but it
+                // must not hide matching tags from older audit days.
+                if (nextTag !== 'ALL') {
+                  setShowAllDates(true);
+                  setSelectedAuditDate('');
+                }
               }}
               className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
