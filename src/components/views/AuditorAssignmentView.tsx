@@ -47,7 +47,7 @@ export const AuditorAssignmentView: React.FC = () => {
   };
 
   const toggleVisibleSales = () => {
-    const visibleIds = sales.flatMap((sale) => (sale.saleId ? [sale.saleId] : []));
+    const visibleIds = sales.map((sale) => sale.id);
     const allVisibleSelected = visibleIds.every((id) => selectedSaleIds.includes(id));
     setSelectedSaleIds((previous) =>
       allVisibleSelected
@@ -66,7 +66,7 @@ export const AuditorAssignmentView: React.FC = () => {
     if (result.success) setSelectedSaleIds([]);
   };
 
-  const visibleIds = sales.flatMap((sale) => (sale.saleId ? [sale.saleId] : []));
+  const visibleIds = sales.map((sale) => sale.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedSaleIds.includes(id));
 
   return (
@@ -160,11 +160,11 @@ export const AuditorAssignmentView: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {sales.map((sale) => {
-                    const assignment = sale.saleId ? getEffectiveAuditorForSale(sale.saleId, effectiveFrom) : undefined;
-                    const selected = sale.saleId ? selectedSaleIds.includes(sale.saleId) : false;
+                    const assignment = getEffectiveAuditorForSale(sale.id, effectiveFrom);
+                    const selected = selectedSaleIds.includes(sale.id);
                     return (
                       <tr key={sale.id} className={selected ? 'bg-slate-50 dark:bg-slate-800/50' : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/30'}>
-                        <td className="px-3 py-2.5"><input type="checkbox" checked={selected} onChange={() => sale.saleId && toggleSale(sale.saleId)} aria-label={`Chọn ${sale.name}`} className="rounded border-slate-300" /></td>
+                        <td className="px-3 py-2.5"><input type="checkbox" checked={selected} onChange={() => toggleSale(sale.id)} aria-label={`Chọn ${sale.name}`} className="rounded border-slate-300" /></td>
                         <td className="px-3 py-2.5 font-medium text-slate-900 dark:text-slate-100">{sale.name}</td>
                         <td className="px-3 py-2.5 text-slate-600 dark:text-slate-400">{sale.teamName || 'Chưa có team'}</td>
                         <td className="px-3 py-2.5">{assignment ? <Badge variant="neutral" size="xs">{assignment.auditorName}</Badge> : <span className="text-amber-600 font-medium">Chưa phân công</span>}</td>

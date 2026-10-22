@@ -556,7 +556,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có quyền điều chỉnh phân công Auditor.' };
     }
 
-    const sale = allUsers.find((u) => u.saleId === saleId);
+    const sale = allUsers.find((u) => u.id === saleId || u.saleId === saleId);
     const auditor = allUsers.find((u) => u.auditorId === auditorId);
     const saleName = sale ? sale.name : 'Sale ' + saleId;
     const auditorName = auditor ? auditor.name : 'Auditor ' + auditorId;
@@ -628,7 +628,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
     let plannedAssignments = auditorAssignments;
     for (const saleId of uniqueSaleIds) {
-      const sale = allUsers.find((user) => user.saleId === saleId);
+      const sale = allUsers.find((user) => user.id === saleId || user.saleId === saleId);
       if (!sale) {
         return { success: false, message: `Không tìm thấy sale ${saleId}; không có thay đổi nào được lưu.` };
       }
