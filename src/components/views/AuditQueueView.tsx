@@ -95,6 +95,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
     [allUsers]
   );
+  const availableAuditDates = useMemo(
+    () => [...new Set(filteredQueueItems.map((item) => item.auditDate.slice(0, 10)))].sort(),
+    [filteredQueueItems]
+  );
 
   const handleOpenReassign = (item: AuditQueueItem, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -159,7 +163,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             />
           </div>
 
-          {/* Filter Team */}
+          {/* Filter audit date */}
           <div>
             <label className="block text-[10px] font-semibold text-slate-400 mb-1">Ngày audit</label>
             <input
@@ -168,6 +172,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               onChange={(e) => setSelectedAuditDate(e.target.value)}
               className="w-full text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-slate-100"
             />
+            <p className="mt-1 text-[10px] text-slate-400">
+              Có dữ liệu: {availableAuditDates.map((date) => new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN')).join(', ')}
+            </p>
           </div>
           <div>
             <select
