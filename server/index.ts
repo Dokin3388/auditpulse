@@ -673,6 +673,32 @@ app.get('/api/sync/google-sheets/status', async (_req: Request, res: Response) =
   }
 });
 
+// Raw sale-issue rows are review data only. They are not converted into
+// corrective actions automatically; an auditor must review them first.
+app.get('/api/sync/google-sheets/issue-logs', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 500);
+    const offset = Math.max(Number(req.query.offset || 0), 0);
+    const result = await query(
+      `SELECT source_row_key AS "sourceRowKey", payload, last_synced_at AS "lastSyncedAt"
+       FROM google_sheet_row_state
+       WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'
+       ORDER BY last_synced_at DESC, source_row_key DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    const count = await query(
+      `SELECT COUNT(*)::int AS total
+       FROM google_sheet_row_state
+       WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
+    );
+    res.json({ data: result.rows, total: count.rows[0]?.total ?? 0, limit, offset });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể đọc nhật ký lỗi Sale.';
+    res.status(500).json({ error: message });
+  }
+});
+
 // ============================================================================
 // 7. DATA ONBOARDING & ADMIN IMPORT (PHASE 1.5)
 // ============================================================================

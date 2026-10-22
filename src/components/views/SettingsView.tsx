@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Badge, SeverityBadge } from '../common/Badge';
 import { DataOnboardingTab } from './DataOnboardingTab';
-import { getGoogleSheetSyncRuns, type GoogleSheetSyncRun } from '../../services/api';
+import { getGoogleSheetSyncRuns, getSourceIssueLogs, type GoogleSheetSyncRun, type SourceIssueLog } from '../../services/api';
 
 const googleSourceLabels: Record<GoogleSheetSyncRun['sourceId'], string> = {
   'sales-operations': 'Vận hành Sale',
@@ -31,12 +31,17 @@ export const SettingsView: React.FC = () => {
   const [googleSyncRuns, setGoogleSyncRuns] = useState<GoogleSheetSyncRun[]>([]);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [issueLogs, setIssueLogs] = useState<SourceIssueLog[]>([]);
+  const [issueLogTotal, setIssueLogTotal] = useState(0);
 
   const refreshGoogleSyncStatus = async () => {
     setSyncLoading(true);
     setSyncError(null);
     try {
-      setGoogleSyncRuns(await getGoogleSheetSyncRuns());
+      const [runs, issueLogResult] = await Promise.all([getGoogleSheetSyncRuns(), getSourceIssueLogs()]);
+      setGoogleSyncRuns(runs);
+      setIssueLogs(issueLogResult.data);
+      setIssueLogTotal(issueLogResult.total);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'Không thể tải trạng thái đồng bộ.');
     } finally {
@@ -48,10 +53,12 @@ export const SettingsView: React.FC = () => {
     if (activeTab !== 'sync') return;
 
     let cancelled = false;
-    void getGoogleSheetSyncRuns()
-      .then((runs) => {
+    void Promise.all([getGoogleSheetSyncRuns(), getSourceIssueLogs()])
+      .then(([runs, issueLogResult]) => {
         if (!cancelled) {
           setGoogleSyncRuns(runs);
+          setIssueLogs(issueLogResult.data);
+          setIssueLogTotal(issueLogResult.total);
           setSyncError(null);
         }
       })
@@ -341,6 +348,46 @@ export const SettingsView: React.FC = () => {
               </div>
               );
             })}
+          </div>
+
+          <div className="border-t dark:border-slate-800 pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Nhật ký lỗi Sale cần auditor review</h4>
+                <p className="text-[11px] text-slate-400">Dữ liệu gốc từ fact_issue_log, chưa tự tạo corrective action.</p>
+              </div>
+              <Badge variant="warning" size="sm">{issueLogTotal.toLocaleString('vi-VN')} dòng</Badge>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-850 text-slate-400">
+                  <tr>
+                    <th className="py-2 px-3">Ngày</th>
+                    <th className="py-2 px-3">Sale</th>
+                    <th className="py-2 px-3">SĐT/KH</th>
+                    <th className="py-2 px-3">Mã lỗi</th>
+                    <th className="py-2 px-3">Đồng bộ lần cuối</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {issueLogs.slice(0, 20).map((item) => {
+                    const payload = item.payload || {};
+                    return (
+                      <tr key={item.sourceRowKey}>
+                        <td className="py-2 px-3">{payload.date || payload.ngay || '—'}</td>
+                        <td className="py-2 px-3">{payload.sale || payload.sale_name || payload.ten_sale || '—'}</td>
+                        <td className="py-2 px-3">{payload.sdt || payload.phone || '—'}</td>
+                        <td className="py-2 px-3 font-mono font-semibold">{payload.issue_code || payload.ma_loi || '—'}</td>
+                        <td className="py-2 px-3 text-slate-500">{new Date(item.lastSyncedAt).toLocaleString('vi-VN')}</td>
+                      </tr>
+                    );
+                  })}
+                  {issueLogs.length === 0 && (
+                    <tr><td colSpan={5} className="py-5 px-3 text-center text-slate-400">Chưa có nhật ký lỗi để review.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

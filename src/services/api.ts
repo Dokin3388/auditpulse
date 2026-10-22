@@ -21,6 +21,12 @@ export interface GoogleSheetSyncRun {
   errorMessage?: string | null;
 }
 
+export interface SourceIssueLog {
+  sourceRowKey: string;
+  payload: Record<string, string>;
+  lastSyncedAt: string;
+}
+
 interface ApiListResponse<T> {
   data: T[];
 }
@@ -127,4 +133,10 @@ export async function getRescuedOrders(): Promise<RescuedOrder[]> {
 
 export async function getGoogleSheetSyncRuns(): Promise<GoogleSheetSyncRun[]> {
   return getList<GoogleSheetSyncRun>('/api/sync/google-sheets/status');
+}
+
+export async function getSourceIssueLogs(limit = 100): Promise<{ data: SourceIssueLog[]; total: number }> {
+  const response = await fetch(`/api/sync/google-sheets/issue-logs?limit=${encodeURIComponent(limit)}`);
+  if (!response.ok) throw new Error('Không thể tải nhật ký lỗi Sale từ Neon.');
+  return (await response.json()) as { data: SourceIssueLog[]; total: number };
 }
