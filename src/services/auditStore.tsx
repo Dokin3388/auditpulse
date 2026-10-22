@@ -213,18 +213,26 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
   useEffect(() => {
     let cancelled = false;
 
+    // Load the existing queue immediately. Refreshing from the source sheet
+    // is a background task and must never block the auditor's worklist.
+    void getAuditQueue().then((items) => {
+      if (!cancelled) setQueueItems(items);
+    }).catch(() => undefined);
+    void materializeAuditQueue()
+      .then(() => getAuditQueue())
+      .then((items) => {
+        if (!cancelled) setQueueItems(items);
+      })
+      .catch(() => undefined);
+
     void Promise.allSettled([
       getAppUsers(),
       getIssueDefinitions(),
-      // A refresh failure must not hide the queue already stored in Neon.
-      materializeAuditQueue()
-        .catch(() => undefined)
-        .then(() => getAuditQueue()),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
     ])
-      .then(([usersResult, issuesResult, queueResult, actionResult, assignmentResult, rescueResult]) => {
+      .then(([usersResult, issuesResult, actionResult, assignmentResult, rescueResult]) => {
         if (cancelled) return;
         if (usersResult.status === 'fulfilled') {
           setAllUsers(usersResult.value);
@@ -232,9 +240,6 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
           if (sessionUser) setCurrentUser(sessionUser);
         }
         if (issuesResult.status === 'fulfilled') setIssueDefinitions(issuesResult.value);
-        if (queueResult.status === 'fulfilled') {
-          setQueueItems(queueResult.value);
-        }
         if (actionResult.status === 'fulfilled') {
           setCorrectiveActions(actionResult.value);
         }
