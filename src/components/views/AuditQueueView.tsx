@@ -133,9 +133,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
-              Run: RUN-2026-1020 • v1.1
+              Run: {effectiveAuditDate ? `RUN-${effectiveAuditDate.replaceAll('-', '')}` : 'Chưa có run'} • v1.1
             </span>
-            <span className="text-xs text-slate-400">Snapshot lúc 00:02:15</span>
+            <span className="text-xs text-slate-400">Snapshot theo ngày {effectiveAuditDate || '—'}</span>
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 dark:text-white mt-1">
             Hàng chờ Audit Hằng ngày (Audit Queue)
