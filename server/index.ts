@@ -307,11 +307,60 @@ app.get('/api/queue', async (req: Request, res: Response) => {
 app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Response) => {
   try {
     const result = await withTransaction(async (client) => {
-      const [sourceRows, customers, sales, assignments] = await Promise.all([
+      const [sourceRows, sourceRuleRows, customers, sales, assignments] = await Promise.all([
         client.query<{ payload: Record<string, string> }>(
           `SELECT payload FROM google_sheet_row_state
            WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
         ),
+        // Build today's operational queue directly from the uploaded CRM/ERP
+        // tables. The issue-log sheet is optional enrichment, not the source
+        // of truth for whether a customer needs review.
+        client.query<{
+          auditDate: string;
+          customerId: string;
+          customerName: string;
+          phone: string | null;
+          saleId: string;
+          saleName: string;
+          teamId: string;
+          teamName: string;
+          ruleCodes: string[];
+        }>(`
+          WITH p AS (
+            SELECT (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS audit_date
+          ), candidates AS (
+            SELECT
+              p.audit_date::text AS "auditDate",
+              c.id AS "customerId", c.name AS "customerName", c.phone,
+              c.current_sale_id AS "saleId", u.name AS "saleName",
+              c.current_team_id AS "teamId", t.name AS "teamName",
+              ARRAY_REMOVE(ARRAY[
+                CASE WHEN c.first_seen_date::date = p.audit_date - 1 THEN 'YESTERDAY_CUSTOMERS' END,
+                CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1
+                       AND NOT EXISTS (
+                         SELECT 1 FROM quotations q0
+                         WHERE q0.customer_id = c.id
+                           AND q0.quote_date::date <= p.audit_date - 1
+                       ) THEN 'NO_QUOTATION' END,
+                CASE WHEN EXISTS (
+                         SELECT 1 FROM quotations q1
+                         WHERE q1.customer_id = c.id
+                           AND q1.quote_date::date BETWEEN p.audit_date - 7 AND p.audit_date - 1
+                           AND NOT EXISTS (
+                             SELECT 1 FROM sales_orders so
+                             WHERE so.customer_id = c.id AND so.status = 'VALID'
+                               AND so.order_date::date >= q1.quote_date::date
+                               AND so.order_date::date <= p.audit_date - 1
+                           )
+                       ) THEN 'QUOTED_NOT_ORDERED' END
+              ]::text[], NULL) AS "ruleCodes"
+            FROM customers c
+            JOIN app_users u ON u.id = c.current_sale_id AND u.role = 'SALE'
+            JOIN teams t ON t.id = c.current_team_id
+            CROSS JOIN p
+          )
+          SELECT * FROM candidates WHERE cardinality("ruleCodes") > 0
+        `),
         client.query<{ id: string; code: string; name: string; phone: string | null }>(
           `SELECT id, code, name, phone FROM customers`
         ),
@@ -356,6 +405,18 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
       };
       const groups = new Map<string, Group>();
       let skipped = 0;
+
+      for (const sourceRule of sourceRuleRows.rows) {
+        const key = `${sourceRule.auditDate}|${sourceRule.customerId}`;
+        groups.set(key, {
+          date: sourceRule.auditDate,
+          customer: { id: sourceRule.customerId, name: sourceRule.customerName, phone: sourceRule.phone },
+          sale: { id: sourceRule.saleId, name: sourceRule.saleName },
+          team: { id: sourceRule.teamId, name: sourceRule.teamName },
+          issueCodes: new Set(sourceRule.ruleCodes),
+        });
+      }
+
       for (const sourceRow of sourceRows.rows) {
         const row = sourceRow.payload || {};
         const date = String(row.date || '').trim().slice(0, 10);
@@ -387,11 +448,11 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
       const runIds = new Set<string>();
       let created = 0;
       for (const group of groups.values()) {
-        const runId = `RUN-SHEET-${group.date.replaceAll('-', '')}`;
+        const runId = `RUN-AUTO-${group.date.replaceAll('-', '')}`;
         runIds.add(runId);
         await client.query(
           `INSERT INTO audit_queue_runs (id, run_date, rule_version, total_items, status)
-           VALUES ($1, $2, 'sheet-issue-v1', 0, 'COMPLETED')
+           VALUES ($1, $2, 'auto-rules-v1', 0, 'COMPLETED')
            ON CONFLICT (id) DO NOTHING`,
           [runId, group.date]
         );
@@ -406,7 +467,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
              assigned_auditor_id, status, risk_tags, active_action_id, rule_version,
              sync_timestamp, assigned_at, shared_work, snapshot_customer_name,
              snapshot_sale_name, snapshot_team_name, snapshot_auditor_name
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'sheet-issue-v1', NOW(), $10, false, $11, $12, $13, $14)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'auto-rules-v1', NOW(), $10, false, $11, $12, $13, $14)
            ON CONFLICT (audit_date, customer_id) DO UPDATE SET
              risk_tags = EXCLUDED.risk_tags,
              assigned_auditor_id = COALESCE(audit_queue_items.assigned_auditor_id, EXCLUDED.assigned_auditor_id),
