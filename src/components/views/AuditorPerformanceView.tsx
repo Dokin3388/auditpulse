@@ -29,7 +29,7 @@ export const AuditorPerformanceView: React.FC = () => {
             </span>
             <span className="text-xs text-slate-500">Spec v1.1 Mục 9</span>
           </div>
-          <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
             Hiệu suất Auditor & Tác động Cứu Đơn
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">

@@ -8,10 +8,9 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
-  RotateCcw,
   Send,
-  Lock,
   Clock,
+  Calendar,
 } from 'lucide-react';
 import {
   Badge,
@@ -56,7 +55,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
   // Auditor recheck form state
   const [recheckVerdict, setRecheckVerdict] = useState<RecheckResult>('IMPROVED');
   const [recheckNotes, setRecheckNotes] = useState('');
-  const [nextDueDate, setNextDueDate] = useState('2026-10-23');
+  const [nextDueDate, setNextDueDate] = useState('2026-10-25');
   const [auditorEvidences, setAuditorEvidences] = useState<Evidence[]>([]);
 
   // Head Auditor waive modal state
@@ -66,13 +65,14 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
   // Status message
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
-    text: string;
+    message: string;
   } | null>(null);
 
   // Strict permission checks
   const isSaleOwner = currentUser.role === 'SALE' && currentUser.saleId === activeAction?.saleId;
   const isAssignedAuditor = currentUser.role === 'AUDITOR' && currentUser.auditorId === activeAction?.auditorId;
   const isHeadAuditor = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
+  const canAudit = isAssignedAuditor || isHeadAuditor;
 
   // Handlers
   const handleSaleSubmit = (e: React.FormEvent) => {
@@ -81,12 +81,12 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
 
     const res = saleMarkActionDone(activeAction.id, saleNotes, saleEvidences[0]);
     if (res.success) {
-      setStatusMessage({ type: 'success', text: res.message });
+      setStatusMessage({ type: 'success', message: res.message });
       setSaleNotes('');
       setSaleEvidences([]);
       setSaleChecked(false);
     } else {
-      setStatusMessage({ type: 'error', text: res.message });
+      setStatusMessage({ type: 'error', message: res.message });
     }
   };
 
@@ -94,15 +94,25 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     if (!activeAction) return;
     const res = auditorStartRecheck(activeAction.id);
     if (res.success) {
-      setStatusMessage({ type: 'success', text: res.message });
+      setStatusMessage({ type: 'success', message: res.message });
     } else {
-      setStatusMessage({ type: 'error', text: res.message });
+      setStatusMessage({ type: 'error', message: res.message });
     }
   };
 
   const handleAuditorSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAction) return;
+
+    if (!recheckNotes.trim()) {
+      setStatusMessage({ type: 'error', message: 'Vui lòng nhập ghi chú kiểm tra của Auditor.' });
+      return;
+    }
+
+    if (recheckVerdict === 'NOT_IMPROVED' && !nextDueDate) {
+      setStatusMessage({ type: 'error', message: 'Khi chọn "Sale chưa sửa lỗi", bắt buộc chọn hạn xử lý mới.' });
+      return;
+    }
 
     const res = auditorSubmitRecheck(
       activeAction.id,
@@ -113,11 +123,11 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     );
 
     if (res.success) {
-      setStatusMessage({ type: 'success', text: res.message });
+      setStatusMessage({ type: 'success', message: res.message });
       setRecheckNotes('');
       setAuditorEvidences([]);
     } else {
-      setStatusMessage({ type: 'error', text: res.message });
+      setStatusMessage({ type: 'error', message: res.message });
     }
   };
 
@@ -125,7 +135,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     if (!activeAction || !waiveReason.trim()) return;
     const res = headAuditorWaiveAction(activeAction.id, waiveReason);
     if (res.success) {
-      setStatusMessage({ type: 'success', text: res.message });
+      setStatusMessage({ type: 'success', message: res.message });
       setIsWaiveModalOpen(false);
       setWaiveReason('');
     }
@@ -141,97 +151,90 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     );
   }
 
+  const isClosed = activeAction.status === 'VERIFIED_CLOSED';
+  const isWaived = activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED';
+
   return (
-    <div className="space-y-4 pb-8 animate-in fade-in duration-150">
-      {/* Header */}
+    <div className="space-y-5 pb-12">
+      {/* Page Title & Context Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-              Quy trình Khắc phục Lỗi & Recheck v1.1
-            </span>
-            <span className="text-xs text-slate-400">
-              {filteredActions.length} actions trong danh sách
-            </span>
-          </div>
-          <h1 className="text-base font-semibold text-slate-900 dark:text-white mt-1">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
             Chi tiết Corrective Action: {activeAction.code}
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Khu vực thao tác rõ ràng giữa Sale khắc phục và Auditor nghiệm thu.
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+            Quy trình theo dõi khắc phục và kiểm tra lại kết quả giữa Sale và Auditor.
           </p>
         </div>
 
-        {/* Head Auditor Waive shortcut */}
-        {isHeadAuditor && activeAction.status !== 'VERIFIED_CLOSED' && activeAction.status !== 'WAIVED' && (
+        {/* Head Auditor Waive Shortcut */}
+        {isHeadAuditor && !isClosed && !isWaived && (
           <button
             onClick={() => setIsWaiveModalOpen(true)}
-            className="px-2.5 py-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md border border-slate-300 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-1.5 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md border border-slate-300 dark:border-slate-700 text-sm font-semibold flex items-center gap-1.5 transition-colors"
           >
-            <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
-            Miễn trừ Action
+            <ShieldCheck className="w-4 h-4 text-slate-500" />
+            <span>Miễn trừ Action</span>
           </button>
         )}
       </div>
 
       {statusMessage && (
         <div
-          className={`p-3 rounded-md text-xs font-medium flex items-center gap-2 ${
+          className={`p-3.5 rounded-md text-sm font-medium flex items-center gap-2 border ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
-              : 'bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
+              : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800'
           }`}
         >
           {statusMessage.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           ) : (
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
           )}
-          {statusMessage.text}
+          <span>{statusMessage.message}</span>
         </div>
       )}
 
-      {/* Main Split Layout: Left List Selector + Right Dual Pane Detail */}
+      {/* Main Split Layout: Left List Selector + Right 3-Section Detail */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left Col: Action Selector List */}
-        <div className="lg:col-span-4 space-y-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
-            Danh sách Action ({filteredActions.length})
-          </h3>
+        <div className="lg:col-span-4 space-y-2.5">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Danh sách Action ({filteredActions.length})
+            </h3>
+          </div>
 
-          <div className="space-y-1.5 max-h-[calc(100vh-250px)] overflow-y-auto pr-1">
-            {filteredActions.map((action) => {
-              const isSelected = action.id === activeAction.id;
+          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+            {filteredActions.map((act) => {
+              const isSelected = act.id === activeAction.id;
               return (
                 <div
-                  key={action.id}
-                  onClick={() => setSelectedActionId(action.id)}
-                  className={`p-3 rounded-md border text-xs cursor-pointer transition-colors ${
+                  key={act.id}
+                  onClick={() => setSelectedActionId(act.id)}
+                  className={`p-3 rounded-md border text-sm transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-600 font-medium'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-800 dark:text-slate-200'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="font-semibold text-slate-900 dark:text-slate-100">
-                      {action.code}
-                    </span>
-                    <ActionStatusBadge status={action.status} isOverdue={action.isOverdue} />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-sm tracking-tight">{act.code}</span>
+                    <ActionStatusBadge status={act.status} isOverdue={act.isOverdue} />
                   </div>
 
-                  <p className="font-medium text-slate-800 dark:text-slate-200 truncate">
-                    {action.customerName}
-                  </p>
+                  <div className={`font-semibold text-sm mt-1 truncate ${isSelected ? 'text-white dark:text-slate-900' : 'text-slate-900 dark:text-slate-100'}`}>
+                    {act.customerName}
+                  </div>
 
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
-                    [{action.issueCode}] {action.issueName}
-                  </p>
+                  <div className={`text-xs mt-1 truncate ${isSelected ? 'text-slate-300 dark:text-slate-600' : 'text-slate-500'}`}>
+                    Sale: {act.saleName} ({act.teamName})
+                  </div>
 
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400">
-                    <span>Sale: {action.saleName}</span>
-                    <span className="font-mono">
-                      Hạn: {new Date(action.dueDate).toLocaleDateString('vi-VN')}
-                    </span>
+                  <div className={`flex items-center justify-between text-xs mt-2 pt-1 border-t ${isSelected ? 'border-white/20 dark:border-slate-300' : 'border-slate-100 dark:border-slate-800'}`}>
+                    <span className="truncate">Lỗi: {act.issueCode}</span>
+                    <span className="font-mono">{new Date(act.dueDate).toLocaleDateString('vi-VN')}</span>
                   </div>
                 </div>
               );
@@ -239,535 +242,387 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
           </div>
         </div>
 
-        {/* Right Col: Active Action Workflows */}
-        <div className="lg:col-span-8 space-y-5">
-          {/* Action Overview Card */}
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
-              <div className="space-y-0.5">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase">Mã Action:</span>
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  {activeAction.code}
-                  <ActionStatusBadge status={activeAction.status} isOverdue={activeAction.isOverdue} />
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500">Hạn chót:</span>
-                <span className="font-mono font-medium text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px]">
-                  {new Date(activeAction.dueDate).toLocaleString('vi-VN')}
+        {/* Right Col: 3 Clearly Separated Sections */}
+        <div className="lg:col-span-8 space-y-4">
+          {/* ================= PHẦN 1: THÔNG TIN KHÁCH HÀNG VÀ SALE ================= */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <span className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-xs">
+                  1
                 </span>
-              </div>
+                Thông tin khách hàng và Sale
+              </h2>
+              <ActionStatusBadge status={activeAction.status} isOverdue={activeAction.isOverdue} />
             </div>
 
-            {/* Context details */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="space-y-1">
-                <div className="text-slate-500 flex items-center gap-1.5">
-                  <Building className="w-3.5 h-3.5 text-slate-400" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <Building className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>Khách hàng:</span>
-                  <strong className="text-slate-900 dark:text-slate-100 font-semibold">
+                  <strong className="text-slate-900 dark:text-slate-100 font-bold text-base">
                     {activeAction.customerName}
                   </strong>
                 </div>
-                <div className="text-slate-500">
-                  Số điện thoại: <span className="font-mono">{activeAction.customerPhone}</span>
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <span>Số điện thoại:</span>
+                  <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
+                    {activeAction.customerPhone}
+                  </span>
                 </div>
-                <div className="text-slate-500">
-                  Sale phụ trách: <strong>{activeAction.saleName}</strong> ({activeAction.teamName})
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <User className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>Sale phụ trách:</span>
+                  <strong className="text-slate-900 dark:text-slate-100 font-semibold">
+                    {activeAction.saleName}
+                  </strong>
+                  <span className="text-xs text-slate-500">({activeAction.teamName})</span>
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <div className="text-slate-500 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-slate-400" />
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>Auditor phụ trách:</span>
-                  <strong className="text-slate-800 dark:text-slate-200">
+                  <strong className="text-slate-900 dark:text-slate-100 font-semibold">
                     {activeAction.auditorName}
                   </strong>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span>Mức độ:</span>
-                  <SeverityBadge severity={activeAction.severity} />
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>Hạn chót:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                    {new Date(activeAction.dueDate).toLocaleDateString('vi-VN')}
+                  </span>
                 </div>
-                <div className="text-slate-500">
-                  SLA Rule: <span className="font-mono">{activeAction.slaRuleVersion}</span>
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                  <span>SLA Rule Version:</span>
+                  <span className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                    {activeAction.slaRuleVersion}
+                  </span>
                 </div>
               </div>
             </div>
-
-            {/* Completion Criteria */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-md border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-              <span className="font-semibold text-slate-600 dark:text-slate-400 uppercase text-[10px] tracking-wider block">
-                Tiêu chí hoàn tất & Hướng dẫn sửa lỗi từ Auditor:
-              </span>
-              <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-normal">
-                {activeAction.completionCriteria}
-              </p>
-              {activeAction.guidanceNotes && (
-                <p className="text-slate-500 text-[11px] mt-1 italic">
-                  Ghi chú thêm: {activeAction.guidanceNotes}
-                </p>
-              )}
-            </div>
-
-            {/* Waive reason notice if waived */}
-            {activeAction.status === 'WAIVED' && (
-              <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-md text-xs text-slate-700 dark:text-slate-300">
-                <p className="font-semibold">Đã được Head Auditor phê duyệt Miễn trừ (WAIVED):</p>
-                <p className="mt-0.5">Lý do: {activeAction.waiveReason}</p>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Người duyệt: {activeAction.waiveApprovedBy}
-                </p>
-              </div>
-            )}
           </div>
 
-          {/* DUAL PANE WORKFLOW CONTAINER */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* ================= PANE 1: SALE SUBMISSION SECTION ================= */}
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px]">
-                    1
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                      Khu vực Sale Khắc phục
-                    </h3>
-                    <p className="text-[10px] text-slate-400">
-                      Sale xác nhận đã làm và tải bằng chứng
-                    </p>
-                  </div>
-                </div>
+          {/* ================= PHẦN 2: LỖI/RISK PHÁT HIỆN TỪ RULE & TIÊU CHUẨN ================= */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+              <span className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-xs">
+                2
+              </span>
+              Lỗi vi phạm & Tiêu chuẩn khắc phục
+            </h2>
 
-                {activeAction.saleMarkedDone && (
-                  <Badge variant="warning" size="xs">
-                    Đã gửi {new Date(activeAction.saleMarkedDoneAt || '').toLocaleTimeString('vi-VN')}
-                  </Badge>
+            <div className="space-y-2.5 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 dark:bg-slate-850 rounded-md border border-slate-200 dark:border-slate-800">
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 uppercase block">Sai phạm phát hiện:</span>
+                  <strong className="text-slate-900 dark:text-slate-100 font-bold text-base mt-0.5 block">
+                    [{activeAction.issueCode}] {activeAction.issueName}
+                  </strong>
+                </div>
+                <SeverityBadge severity={activeAction.severity} />
+              </div>
+
+              {/* Completion criteria */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-850 rounded-md border border-slate-200 dark:border-slate-800 space-y-1">
+                <span className="font-semibold text-slate-600 dark:text-slate-400 uppercase text-xs tracking-wider block">
+                  Tiêu chí hoàn tất & Hướng dẫn sửa lỗi từ Auditor:
+                </span>
+                <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-normal">
+                  {activeAction.completionCriteria}
+                </p>
+                {activeAction.guidanceNotes && (
+                  <p className="text-slate-500 text-xs mt-1 italic">
+                    Ghi chú thêm: {activeAction.guidanceNotes}
+                  </p>
                 )}
               </div>
 
-              {/* RBAC notice if current user is not the sale owner */}
-              {!isSaleOwner && (activeAction.status === 'OPEN' || activeAction.status === 'REOPENED') && (
-                <div className="p-2.5 rounded-md bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5 border border-amber-200/80 dark:border-amber-800/60">
-                  <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                  <span>
-                    Chỉ Sale phụ trách (<strong>{activeAction.saleName}</strong>) mới có quyền gửi xác nhận khắc phục.
+              {/* Khu vực thông tin nộp của Sale (Tham khảo cho Auditor) */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-md p-3.5 bg-slate-50/60 dark:bg-slate-850/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Phản hồi từ nhân viên Sale:
                   </span>
+                  {activeAction.saleMarkedDone ? (
+                    <Badge variant="warning" size="xs">
+                      Đã nộp ngày {new Date(activeAction.saleMarkedDoneAt || '').toLocaleDateString('vi-VN')}
+                    </Badge>
+                  ) : (
+                    <Badge variant="neutral" size="xs">Chưa nộp phản hồi</Badge>
+                  )}
                 </div>
-              )}
 
-              {/* State-specific UI for Sale section */}
-              {activeAction.status === 'VERIFIED_CLOSED' ? (
-                <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-emerald-600 font-medium">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Action đã đóng (VERIFIED_CLOSED)</span>
-                  </div>
-                  <p>Quy trình khắc phục và nghiệm thu hoàn tất. Không thể sửa đổi thêm.</p>
-                  {activeAction.saleNotes && (
-                    <p className="italic text-slate-700 dark:text-slate-300">"{activeAction.saleNotes}"</p>
-                  )}
-                  {activeAction.saleEvidenceList.length > 0 && (
-                    <EvidencePreview evidenceList={activeAction.saleEvidenceList} title="Bằng chứng Sale đã nộp" readOnly={true} />
-                  )}
-                </div>
-              ) : activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED' ? (
-                <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Action đã được Miễn trừ (WAIVED)</span>
-                  </div>
-                  <p>Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}</p>
-                </div>
-              ) : activeAction.status === 'IN_RECHECK' ? (
-                <div className="space-y-2.5 text-xs">
-                  <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 space-y-1">
-                    <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Auditor đang kiểm tra (IN_RECHECK)</span>
-                    </div>
-                    <p className="text-slate-500 text-[11px]">
-                      Sale không thể chỉnh sửa action trong lúc Auditor đang nghiệm thu.
-                    </p>
-                    {activeAction.saleNotes && (
-                      <p className="text-slate-800 dark:text-slate-200 font-medium mt-1">
-                        Ghi chú đã nộp: "{activeAction.saleNotes}"
-                      </p>
-                    )}
-                  </div>
-                  {activeAction.saleEvidenceList.length > 0 && (
-                    <EvidencePreview evidenceList={activeAction.saleEvidenceList} title="Bằng chứng Sale đã gửi" readOnly={true} />
-                  )}
-                </div>
-              ) : activeAction.status === 'SALE_MARKED_DONE' ? (
-                /* Display Submitted Sale Data */
-                <div className="space-y-2.5 text-xs">
-                  <div className="p-3 rounded-md bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-slate-700 dark:text-slate-300 space-y-1">
-                    <div className="flex items-center gap-1.5 text-emerald-600 font-medium">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Sale đã đánh dấu hoàn thành</span>
-                    </div>
-                    <p className="text-slate-800 dark:text-slate-200 font-medium">
+                {activeAction.saleMarkedDone ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       "{activeAction.saleNotes || 'Không có ghi chú thêm.'}"
                     </p>
+                    {activeAction.saleEvidenceList.length > 0 && (
+                      <EvidencePreview
+                        evidenceList={activeAction.saleEvidenceList}
+                        title="Bằng chứng Sale đã đính kèm"
+                        readOnly={true}
+                      />
+                    )}
                   </div>
-
-                  <EvidencePreview
-                    evidenceList={activeAction.saleEvidenceList}
-                    title="Bằng chứng Sale đính kèm"
-                    readOnly={true}
-                  />
-
-                  {/* Clarification per spec */}
-                  <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-850 text-[11px] text-slate-500 border border-slate-200 dark:border-slate-800 flex items-start gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                    <span>
-                      Theo Spec v1.1, Sale <strong>không thể tự đóng action</strong>. Action đang ở trạng thái{' '}
-                      <code>SALE_MARKED_DONE</code> và chờ Auditor recheck.
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                /* Sale submission form: strictly allowed only on OPEN and REOPENED */
-                <form onSubmit={handleSaleSubmit} className="space-y-3 text-xs">
-                  {/* Checkbox "Tôi đã thực hiện" strictly required per spec */}
-                  <label className={`flex items-start gap-2.5 p-3 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors ${isSaleOwner ? 'cursor-pointer hover:border-slate-400' : 'opacity-60 cursor-not-allowed'}`}>
-                    <input
-                      type="checkbox"
-                      checked={saleChecked}
-                      onChange={(e) => setSaleChecked(e.target.checked)}
-                      disabled={!isSaleOwner}
-                      className="mt-0.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                    />
-                    <div>
-                      <span className="font-medium text-slate-900 dark:text-slate-100">
-                        Tôi đã thực hiện khắc phục
-                      </span>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Cam kết đã liên hệ khách và hoàn tất tiêu chuẩn được giao.
-                      </p>
-                    </div>
-                  </label>
-
+                ) : (
                   <div>
-                    <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
-                      Ghi chú kết quả ngắn (Bắt buộc)
-                    </label>
-                    <textarea
-                      rows={2}
-                      placeholder="VD: Đã gọi lại khách làm rõ bảo hành, chốt lịch ký HĐ..."
-                      value={saleNotes}
-                      onChange={(e) => setSaleNotes(e.target.value)}
-                      disabled={!isSaleOwner}
-                      className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60"
-                    />
+                    <p className="text-xs text-slate-500">
+                      Sale chưa bấm gửi xác nhận khắc phục cho action này.
+                    </p>
+
+                    {/* Form for sale if current user is sale owner */}
+                    {isSaleOwner && (activeAction.status === 'OPEN' || activeAction.status === 'REOPENED') && (
+                      <form onSubmit={handleSaleSubmit} className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={saleChecked}
+                            onChange={(e) => setSaleChecked(e.target.checked)}
+                            className="mt-0.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                          />
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Tôi cam kết đã thực hiện khắc phục theo đúng hướng dẫn
+                          </span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="Nhập ghi chú kết quả xử lý..."
+                          value={saleNotes}
+                          onChange={(e) => setSaleNotes(e.target.value)}
+                          className="w-full text-sm p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!saleChecked || !saleNotes.trim()}
+                          className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-semibold disabled:opacity-40"
+                        >
+                          Gửi xác nhận khắc phục
+                        </button>
+                      </form>
+                    )}
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
 
-                  <EvidencePreview
-                    evidenceList={saleEvidences}
-                    allowAdd={isSaleOwner}
-                    onAddEvidence={(evi) => setSaleEvidences([...saleEvidences, evi])}
-                    title="Tải lên Bằng chứng (Ảnh/PDF/Link)"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={!isSaleOwner || !saleChecked || !saleNotes.trim()}
-                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 disabled:opacity-40 text-white font-medium rounded-md transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Gửi Auditor Recheck (SALE_MARKED_DONE)
-                  </button>
-                </form>
-              )}
+          {/* ================= PHẦN 3: KẾT LUẬN CỦA AUDITOR (NỔI BẬT NHẤT) ================= */}
+          <div className="bg-slate-50 dark:bg-slate-850 p-5 rounded-lg border-2 border-slate-400 dark:border-slate-600 shadow-md space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+              <div>
+                <h2 className="text-base font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 flex items-center justify-center font-bold text-xs">
+                    3
+                  </span>
+                  Kết luận nghiệm thu của Auditor
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Auditor là người quyết định cuối cùng về việc đóng hay yêu cầu sửa lại.
+                </p>
+              </div>
+              <Badge variant="blue" size="sm">
+                Auditor: {activeAction.auditorName}
+              </Badge>
             </div>
 
-            {/* ================= PANE 2: AUDITOR RECHECK SECTION ================= */}
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-semibold text-[11px]">
-                    2
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                      Khu vực Auditor Recheck
-                    </h3>
-                    <p className="text-[10px] text-slate-400">
-                      Chỉ Auditor mới có quyền Đóng hoặc Mở lại Action
-                    </p>
-                  </div>
-                </div>
-
-                <Badge variant="neutral" size="xs">
-                  Auditor: {activeAction.auditorName}
-                </Badge>
+            {/* If Closed */}
+            {isClosed ? (
+              <div className="p-4 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-center space-y-1.5">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                <h4 className="font-bold text-emerald-900 dark:text-emerald-200 text-base">
+                  Action đã được nghiệm thu ĐẠT và ĐÓNG (VERIFIED_CLOSED)
+                </h4>
+                <p className="text-sm text-emerald-800 dark:text-emerald-300">
+                  Auditor đã kiểm tra và ghi nhận hành vi đã cải thiện. Quy trình hoàn tất.
+                </p>
               </div>
-
-              {/* RBAC notice if current user is not assigned auditor */}
-              {!isAssignedAuditor && activeAction.status !== 'VERIFIED_CLOSED' && (
-                <div className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-850 text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1.5 border border-slate-200 dark:border-slate-800">
-                  <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                  <span>
-                    Chỉ Auditor phụ trách (<strong>{activeAction.auditorName}</strong>) mới có quyền thực hiện recheck.
-                  </span>
-                </div>
-              )}
-
-              {/* Closed status display */}
-              {activeAction.status === 'VERIFIED_CLOSED' ? (
-                <div className="p-4 rounded-md bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-xs text-center space-y-1.5">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
-                  <h4 className="font-semibold text-emerald-900 dark:text-emerald-200 text-xs">
-                    Action đã được xác nhận ĐÓNG (VERIFIED_CLOSED)
-                  </h4>
-                  <p className="text-emerald-700 dark:text-emerald-300 text-[11px]">
-                    Auditor đã kiểm tra và ghi nhận cải thiện (IMPROVED).
-                  </p>
-                </div>
-              ) : activeAction.status === 'WAIVED' || activeAction.status === 'CANCELLED' ? (
-                <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-center space-y-1.5">
-                  <ShieldCheck className="w-6 h-6 text-slate-400 mx-auto" />
-                  <h4 className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
-                    Action đã được Miễn trừ (WAIVED)
-                  </h4>
-                  <p className="text-slate-500 text-[11px]">
-                    Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}
-                  </p>
-                </div>
-              ) : activeAction.status === 'OPEN' || activeAction.status === 'REOPENED' ? (
-                <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1 text-center">
-                  <Clock className="w-6 h-6 text-slate-400 mx-auto" />
-                  <h4 className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
-                    Chờ Sale khắc phục ({activeAction.status})
-                  </h4>
-                  <p className="text-[11px]">
-                    Auditor chỉ có thể bắt đầu recheck sau khi Sale đã tick "Tôi đã thực hiện" (trạng thái SALE_MARKED_DONE).
-                  </p>
-                </div>
-              ) : activeAction.status === 'SALE_MARKED_DONE' ? (
-                <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 rounded-md border border-amber-200 dark:border-amber-800 space-y-2.5">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                    <div>
-                      <h4 className="font-semibold text-amber-950 dark:text-amber-200 text-xs">
-                        Sale đã nộp xác nhận khắc phục (SALE_MARKED_DONE)
-                      </h4>
-                      <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                        Bấm "Bắt đầu Recheck" để chuyển trạng thái sang IN_RECHECK và mở biểu mẫu đánh giá.
-                      </p>
-                    </div>
+            ) : isWaived ? (
+              <div className="p-4 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-center space-y-1.5">
+                <ShieldCheck className="w-8 h-8 text-slate-500 mx-auto" />
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-base">
+                  Action đã được Miễn trừ (WAIVED)
+                </h4>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleAuditorSubmit} className="space-y-4">
+                {/* State warning if still in OPEN and not yet SALE_MARKED_DONE */}
+                {activeAction.status === 'OPEN' || activeAction.status === 'REOPENED' ? (
+                  <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>
+                      Action đang ở trạng thái <strong>{activeAction.status}</strong> (Chờ Sale khắc phục). 
+                      Auditor có thể recheck sớm hoặc chờ Sale xác nhận đã hoàn thành.
+                    </span>
+                  </div>
+                ) : activeAction.status === 'SALE_MARKED_DONE' && (
+                  <div className="flex items-center justify-between p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 text-xs text-blue-900 dark:text-blue-200">
+                    <span>Sale đã nộp xác nhận. Bấm để bắt đầu phiên đánh giá:</span>
                     <button
+                      type="button"
                       onClick={handleStartRecheck}
-                      disabled={!isAssignedAuditor}
-                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-medium rounded-md text-xs transition-colors disabled:opacity-40 shrink-0"
+                      disabled={!canAudit}
+                      className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded font-semibold text-xs"
                     >
-                      Bắt đầu Recheck
+                      Bắt đầu phiên Recheck
+                    </button>
+                  </div>
+                )}
+
+                {/* HAI NÚT LỚN CỦA AUDITOR: "Sale đã sửa lỗi" vs "Sale chưa sửa lỗi" */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-slate-900 dark:text-slate-100 block">
+                    Đánh giá kết quả của Auditor:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRecheckVerdict('IMPROVED')}
+                      disabled={!canAudit}
+                      className={`p-4 rounded-md border-2 text-left transition-all ${
+                        recheckVerdict === 'IMPROVED'
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200 shadow-sm'
+                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-5 h-5 ${recheckVerdict === 'IMPROVED' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                        <span className="font-bold text-base">Sale đã sửa lỗi</span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 pl-7">
+                        Xác nhận đạt tiêu chuẩn, đóng action (VERIFIED_CLOSED).
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRecheckVerdict('NOT_IMPROVED')}
+                      disabled={!canAudit}
+                      className={`p-4 rounded-md border-2 text-left transition-all ${
+                        recheckVerdict === 'NOT_IMPROVED'
+                          ? 'border-rose-600 bg-rose-50 text-rose-900 dark:bg-rose-950/50 dark:text-rose-200 shadow-sm'
+                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <XCircle className={`w-5 h-5 ${recheckVerdict === 'NOT_IMPROVED' ? 'text-rose-600' : 'text-slate-400'}`} />
+                        <span className="font-bold text-base">Sale chưa sửa lỗi</span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 pl-7">
+                        Chưa đạt yêu cầu, mở lại action (REOPENED) và đặt hạn mới.
+                      </p>
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Recheck execution form: active only when IN_RECHECK */
-                <div className="space-y-3 text-xs">
-                  <div className="p-2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-medium flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
-                    <Clock className="w-3.5 h-3.5 shrink-0 text-slate-500" />
-                    <span>Action đang trong phiên kiểm tra (IN_RECHECK). Vui lòng đưa ra kết luận:</span>
-                  </div>
 
-                  {/* Verdict Selection: IMPROVED vs NOT_IMPROVED */}
-                  <div className="space-y-1">
-                    <label className="font-medium block text-slate-700 dark:text-slate-300">
-                      Kết luận Recheck của Auditor:
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setRecheckVerdict('IMPROVED')}
-                        disabled={!isAssignedAuditor}
-                        className={`p-2.5 rounded-md border text-left transition-colors disabled:opacity-60 ${
-                          recheckVerdict === 'IMPROVED'
-                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-medium dark:bg-emerald-950/40 dark:text-emerald-300'
-                            : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Cải thiện (IMPROVED)</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-normal mt-0.5">
-                          Đóng action (VERIFIED_CLOSED)
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setRecheckVerdict('NOT_IMPROVED')}
-                        disabled={!isAssignedAuditor}
-                        className={`p-2.5 rounded-md border text-left transition-colors disabled:opacity-60 ${
-                          recheckVerdict === 'NOT_IMPROVED'
-                            ? 'bg-rose-50 border-rose-500 text-rose-800 font-medium dark:bg-rose-950/40 dark:text-rose-300'
-                            : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                          <span>Chưa đạt (NOT_IMPROVED)</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-normal mt-0.5">
-                          Mở lại action (REOPENED)
-                        </p>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* When NOT_IMPROVED: Mandatory new deadline per Spec */}
-                  {recheckVerdict === 'NOT_IMPROVED' && (
-                    <div className="p-2.5 bg-rose-50/70 dark:bg-rose-950/20 rounded-md border border-rose-200 dark:border-rose-800 space-y-1.5">
-                      <label className="font-semibold text-rose-900 dark:text-rose-200 block text-xs">
-                        Hạn chót mới cho Sale xử lý lại (Bắt buộc theo Spec):
-                      </label>
-                      <input
-                        type="date"
-                        value={nextDueDate}
-                        onChange={(e) => setNextDueDate(e.target.value)}
-                        disabled={!isAssignedAuditor}
-                        className="w-full px-2.5 py-1.5 rounded-md border border-rose-300 dark:bg-slate-800 text-xs font-medium"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
-                      Ghi nhận kết quả & Hướng dẫn chỉnh lỗi chi tiết
-                    </label>
-                    <textarea
-                      rows={2}
-                      placeholder="Ghi rõ bằng chứng kiểm tra, lý do đạt hoặc chưa đạt..."
-                      value={recheckNotes}
-                      onChange={(e) => setRecheckNotes(e.target.value)}
-                      disabled={!isAssignedAuditor}
-                      className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60"
-                    />
-                  </div>
-
-                  <EvidencePreview
-                    evidenceList={auditorEvidences}
-                    allowAdd={isAssignedAuditor}
-                    onAddEvidence={(evi) => setAuditorEvidences([...auditorEvidences, evi])}
-                    title="Bằng chứng Recheck của Auditor"
+                {/* Ghi chú kiểm tra của Auditor (Bắt buộc) */}
+                <div>
+                  <label className="text-sm font-semibold text-slate-800 dark:text-slate-200 block mb-1">
+                    Ghi chú kiểm tra của Auditor <span className="text-rose-600">*</span>:
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Ghi rõ nhận xét, căn cứ kiểm tra thực tế trên CRM/ERP..."
+                    value={recheckNotes}
+                    onChange={(e) => setRecheckNotes(e.target.value)}
+                    disabled={!canAudit}
+                    className="w-full text-sm p-3 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    required
                   />
+                </div>
 
+                {/* Bắt buộc chọn hạn xử lý mới nếu "Sale chưa sửa lỗi" */}
+                {recheckVerdict === 'NOT_IMPROVED' && (
+                  <div className="p-3.5 rounded-md bg-rose-50/60 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-900 space-y-2">
+                    <label className="text-sm font-bold text-rose-900 dark:text-rose-200 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-rose-600" />
+                      <span>Hạn xử lý mới cho Sale (Bắt buộc):</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={nextDueDate}
+                      onChange={(e) => setNextDueDate(e.target.value)}
+                      disabled={!canAudit}
+                      className="text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 rounded-md font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      required
+                    />
+                    <p className="text-xs text-rose-800 dark:text-rose-300">
+                      Sale sẽ có hạn đến ngày này để tiếp tục liên hệ khách hàng và khắc phục lại.
+                    </p>
+                  </div>
+                )}
+
+                {/* Bằng chứng nếu có */}
+                <EvidencePreview
+                  evidenceList={auditorEvidences}
+                  allowAdd={canAudit}
+                  onAddEvidence={(evi) => setAuditorEvidences([...auditorEvidences, evi])}
+                  title="Bằng chứng kiểm tra của Auditor (Nếu có)"
+                />
+
+                {/* Nút gửi kết luận lớn */}
+                <div className="pt-2">
                   <button
-                    type="button"
-                    onClick={handleAuditorSubmit}
-                    disabled={!isAssignedAuditor || !recheckNotes.trim()}
-                    className={`w-full py-2 text-white font-medium rounded-md transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 ${
+                    type="submit"
+                    disabled={!canAudit || !recheckNotes.trim()}
+                    className={`w-full py-3 rounded-md text-base font-bold text-white shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-40 ${
                       recheckVerdict === 'IMPROVED'
                         ? 'bg-emerald-600 hover:bg-emerald-700'
                         : 'bg-rose-600 hover:bg-rose-700'
                     }`}
                   >
-                    {recheckVerdict === 'IMPROVED' ? (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Xác nhận Đóng Action (VERIFIED_CLOSED)
-                      </>
-                    ) : (
-                      <>
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Mở lại Action (REOPENED) & Giao hạn mới
-                      </>
-                    )}
+                    <Send className="w-5 h-5" />
+                    <span>
+                      {recheckVerdict === 'IMPROVED'
+                        ? 'Xác nhận Đạt & Đóng Action (VERIFIED_CLOSED)'
+                        : 'Xác nhận Chưa đạt & Mở lại Action (REOPENED)'}
+                    </span>
                   </button>
                 </div>
-              )}
-            </div>
+              </form>
+            )}
           </div>
-
-          {/* Recheck History Audit Trail Table */}
-          {activeAction.rechecks.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2.5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Lịch sử các lần Recheck ({activeAction.rechecks.length})
-              </h3>
-
-              <div className="space-y-2">
-                {activeAction.rechecks.map((rc) => (
-                  <div
-                    key={rc.id}
-                    className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs flex items-start justify-between gap-3"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900 dark:text-slate-100">
-                          Lần {rc.recheckNumber}
-                        </span>
-                        <Badge
-                          variant={rc.result === 'IMPROVED' ? 'success' : 'danger'}
-                          size="xs"
-                        >
-                          {rc.result === 'IMPROVED' ? 'IMPROVED' : 'NOT_IMPROVED'}
-                        </Badge>
-                        <span className="text-slate-400 text-[11px]">
-                          bởi {rc.auditorName} • {new Date(rc.recheckDate).toLocaleString('vi-VN')}
-                        </span>
-                      </div>
-                      <p className="text-slate-700 dark:text-slate-300 font-normal">{rc.notes}</p>
-                    </div>
-
-                    {rc.nextDueDate && (
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] text-slate-400 block">Hạn mới:</span>
-                        <span className="font-mono font-semibold text-rose-600 text-xs">
-                          {new Date(rc.nextDueDate).toLocaleDateString('vi-VN')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Head Auditor Waive Modal */}
+      {/* Waive Modal */}
       <Modal
         isOpen={isWaiveModalOpen}
         onClose={() => setIsWaiveModalOpen(false)}
-        title="Miễn trừ Action (Head Auditor)"
-        subtitle={`Miễn trừ nghĩa vụ khắc phục đối với ${activeAction.code}`}
+        title="Miễn trừ Corrective Action (Head Auditor)"
+        subtitle={`Phê duyệt miễn trừ trách nhiệm cho action: ${activeAction.code}`}
         maxWidth="md"
       >
-        <div className="space-y-3 text-xs">
-          <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-            <p className="font-semibold">Quyền hạn Head Auditor:</p>
-            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              Thao tác Miễn trừ (WAIVED) sẽ đóng action mà không tính vào tỷ lệ lỗi của Sale hoặc sản lượng auditor. 
-              Bắt buộc phải ghi nhận lý do chính đáng và lưu audit trail bất biến.
-            </p>
-          </div>
+        <div className="space-y-4 text-sm">
+          <p className="text-slate-600 dark:text-slate-400">
+            Hành động miễn trừ sẽ đóng action mà không ghi nhận lỗi hay chế tài cho Sale.
+          </p>
 
           <div>
-            <label className="font-medium block mb-1 text-slate-700 dark:text-slate-300">
+            <label className="font-semibold block mb-1 text-slate-700 dark:text-slate-300">
               Lý do miễn trừ (Bắt buộc):
             </label>
             <textarea
               rows={3}
-              placeholder="VD: Khách hàng đã gửi thông báo phá sản, hoặc đã giải quyết qua kênh khiếu nại riêng có biên bản..."
+              placeholder="VD: Khách hàng yêu cầu hủy dự án, lỗi hệ thống ERP..."
               value={waiveReason}
               onChange={(e) => setWaiveReason(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+              className="w-full p-2.5 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t dark:border-slate-800">
+          <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setIsWaiveModalOpen(false)}
-              className="px-3 py-1.5 rounded-md text-slate-600 dark:text-slate-400 hover:bg-slate-100 text-xs"
+              className="px-3.5 py-1.5 rounded-md text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Hủy
             </button>
@@ -775,7 +630,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
               type="button"
               onClick={handleConfirmWaive}
               disabled={!waiveReason.trim()}
-              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-md text-xs disabled:opacity-40 transition-colors"
+              className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold rounded-md disabled:opacity-40 transition-colors"
             >
               Xác nhận Miễn trừ
             </button>

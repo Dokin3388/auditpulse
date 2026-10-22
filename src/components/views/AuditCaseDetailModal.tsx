@@ -12,8 +12,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Send,
   Lock,
+  ArrowRight,
 } from 'lucide-react';
 
 interface AuditCaseDetailModalProps {
@@ -68,14 +68,17 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
     setEvidences((prev) => [...prev, evi]);
   };
 
-  const handleCompleteAudit = () => {
+  const handleCompleteAudit = (forceFailWithIssues?: boolean) => {
     setIsSubmitting(true);
     setFeedbackMsg(null);
 
-    // Call store (strict permission and anti-duplicate check inside)
+    const issuesToSubmit = forceFailWithIssues && selectedIssueCodes.length === 0
+      ? [issueDefinitions[0]?.issueCode || 'ISSUE-01']
+      : selectedIssueCodes;
+
     const result = createAuditCaseForQueue(
       queueItem.id,
-      selectedIssueCodes,
+      issuesToSubmit,
       generalNotes,
       evidences
     );
@@ -85,7 +88,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
       setFeedbackMsg({ type: 'success', text: result.message });
       setTimeout(() => {
         onClose();
-      }, 1500);
+      }, 1200);
     } else {
       setFeedbackMsg({ type: 'error', text: result.message });
     }
@@ -97,23 +100,23 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Audit Case: ${queueItem.customerName}`}
-      subtitle={`Mã Queue: ${queueItem.id} • Rule: ${queueItem.ruleVersion} • Snapshot: 20/10/2026`}
+      title={`Chi tiết Audit Case: ${queueItem.customerName}`}
+      subtitle={`Mã Queue: ${queueItem.id} • Rule: ${queueItem.ruleVersion} • Ngày audit: ${queueItem.auditDate.slice(0, 10)}`}
       maxWidth="2xl"
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         {feedbackMsg && (
           <div
-            className={`p-3 rounded-md text-xs font-medium flex items-center gap-2 border ${
+            className={`p-3.5 rounded-md text-sm font-medium flex items-center gap-2 border ${
               feedbackMsg.type === 'success'
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
                 : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800'
             }`}
           >
             {feedbackMsg.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             ) : (
-              <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
             )}
             {feedbackMsg.text}
           </div>
@@ -121,8 +124,8 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
 
         {/* Permission Denied Notice if current user cannot audit this item */}
         {!canAudit && (
-          <div className="bg-rose-50/50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-md p-3 flex items-center gap-2 text-xs text-rose-800 dark:text-rose-200">
-            <Lock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+          <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-md p-3.5 flex items-center gap-2.5 text-sm text-rose-800 dark:text-rose-200">
+            <Lock className="w-4 h-4 text-rose-600 shrink-0" />
             <span>
               <strong>Giới hạn quyền:</strong> Bạn đang đăng nhập với vai trò <strong>{currentUser.name}</strong> ({currentUser.role}). 
               Chỉ <strong>{queueItem.assignedAuditorName || 'Auditor được phân công'}</strong> hoặc Head Auditor mới có quyền chấm case này.
@@ -130,16 +133,16 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
           </div>
         )}
 
-        {/* Existing Open Action warning ("Đang theo dõi" per spec) */}
+        {/* Active Action Warning */}
         {queueItem.activeActionId && (
-          <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md p-3 flex items-start justify-between gap-3 text-xs">
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-md p-3.5 flex items-start justify-between gap-3 text-sm">
             <div>
-              <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <span className="font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                Khách đang có Action đang mở (Trạng thái: Đang theo dõi)
+                Khách hàng đang có Action đang mở: {queueItem.activeActionId}
               </span>
-              <p className="text-slate-600 dark:text-slate-400 mt-0.5 text-[11px]">
-                Theo Spec v1.1, hệ thống không tạo action trùng cho cùng khách khi action cũ còn mở.
+              <p className="text-amber-800 dark:text-amber-300 mt-1 text-xs">
+                Ca audit này đang trong quá trình theo dõi khắc phục. Bạn có thể mở trực tiếp Action để thực hiện recheck.
               </p>
             </div>
             {onNavigateToAction && (
@@ -149,251 +152,272 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
                   onNavigateToAction(queueItem.activeActionId!);
                   onClose();
                 }}
-                className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 rounded font-medium text-xs shrink-0 transition-colors"
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 rounded font-semibold text-xs shrink-0 flex items-center gap-1 transition-colors"
               >
-                Mở Action {queueItem.activeActionId}
+                <span>Xem Action</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         )}
 
-        {/* 1. Customer & Snapshot Information */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-950/40 p-3 rounded-md border border-slate-200 dark:border-slate-800 text-xs">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-slate-500">
-              <Building className="w-3.5 h-3.5" />
-              <span>Khách hàng:</span>
-              <strong className="text-slate-900 dark:text-slate-100">{queueItem.customerName}</strong>
-            </div>
-            <div className="flex items-center gap-2 text-slate-500">
-              <Phone className="w-3.5 h-3.5" />
-              <span>SĐT chuẩn hóa:</span>
-              <span className="font-mono text-slate-800 dark:text-slate-200">
-                {queueItem.customerPhone}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-slate-500">
-              <Clock className="w-3.5 h-3.5" />
-              <span>Ngày vào hệ thống:</span>
-              <span className="text-slate-700 dark:text-slate-300">
-                {new Date(queueItem.customerFirstSeen).toLocaleString('vi-VN')}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-slate-500">
-              <User className="w-3.5 h-3.5" />
-              <span>Sale chịu trách nhiệm:</span>
-              <strong className="text-slate-900 dark:text-slate-100">{queueItem.saleName}</strong>
-            </div>
-            <div className="flex items-center gap-2 text-slate-500">
-              <span>Team:</span>
-              <span className="text-slate-700 dark:text-slate-300">{queueItem.teamName}</span>
-            </div>
-            <div className="flex items-center gap-2 text-slate-500">
-              <span>Auditor phụ trách:</span>
-              <span className="font-semibold text-slate-900 dark:text-slate-100">
-                {queueItem.assignedAuditorName || 'Chưa gán'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Snapshot Risk Reason per Spec Section 4 */}
-        <div className="space-y-1.5">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Lý do vào Queue (Snapshot tại 00:00 ngày 20/10)
-          </h4>
-          <div className="flex flex-wrap gap-2">
-            {queueItem.riskTags.map((tag) => (
-              <div
-                key={tag.code}
-                className="p-2 rounded-md border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 flex-1 min-w-[200px]"
-              >
-                <RiskTagBadge code={tag.code} label={tag.label} />
-                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                  {tag.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 3. Quotation & Order History Data */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Dữ liệu Báo giá & Đơn hàng nguồn
-            </h4>
-            <span className="text-[11px] text-slate-400">
-              Chỉ xét báo giá mới nhất [D-7, D-1]
+        {/* ================= PHẦN 1: THÔNG TIN KHÁCH HÀNG VÀ SALE ================= */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+            <span className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-xs">
+              1
             </span>
-          </div>
+            Thông tin khách hàng và Sale phụ trách
+          </h3>
 
-          {customerQuotes.length === 0 ? (
-            <div className="text-xs text-slate-500 p-2.5 bg-slate-50 dark:bg-slate-950/40 rounded-md border border-dashed border-slate-300 dark:border-slate-800 text-center">
-              Không có báo giá nào trong hệ thống ERP. (Đúng với rule NO_QUOTATION)
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                <Building className="w-4 h-4 text-slate-400" />
+                <span>Khách hàng:</span>
+                <strong className="text-slate-900 dark:text-slate-100 font-bold">
+                  {queueItem.customerName}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                <Phone className="w-4 h-4 text-slate-400" />
+                <span>Số điện thoại:</span>
+                <span className="font-mono font-medium text-slate-900 dark:text-slate-100">
+                  {queueItem.customerPhone}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <span>Ngày vào hệ thống:</span>
+                <span className="text-slate-800 dark:text-slate-200">
+                  {new Date(queueItem.customerFirstSeen).toLocaleDateString('vi-VN')}
+                </span>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              {customerQuotes.map((quo, i) => (
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                <User className="w-4 h-4 text-slate-400" />
+                <span>Sale phụ trách:</span>
+                <strong className="text-slate-900 dark:text-slate-100 font-semibold">
+                  {queueItem.saleName}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                <span>Team Sale:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">
+                  {queueItem.teamName}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                <span>Auditor phụ trách:</span>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {queueItem.assignedAuditorName || 'Chưa phân công'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= PHẦN 2: LỖI/RISK PHÁT HIỆN TỪ RULE ================= */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+            <span className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-xs">
+              2
+            </span>
+            Lỗi / Rủi ro phát hiện từ Rule
+          </h3>
+
+          {/* Risk tags */}
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase text-slate-500 block">
+              Cảnh báo từ hệ thống:
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {queueItem.riskTags.map((tag) => (
                 <div
-                  key={quo.id}
-                  className={`p-2.5 rounded-md border text-xs flex items-center justify-between ${
-                    i === 0
-                      ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/60'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
-                  }`}
+                  key={tag.code}
+                  className="p-2.5 rounded-md border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 flex-1 min-w-[220px]"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-900 dark:text-slate-100">
-                        {quo.code}
-                      </span>
-                      {i === 0 && (
-                        <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.2 rounded font-semibold border border-amber-200 dark:border-amber-800">
-                          BÁO GIÁ MỚI NHẤT
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-slate-500 text-[11px] mt-0.5">{quo.itemsSummary}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold text-slate-900 dark:text-slate-100">
-                      {quo.totalAmount.toLocaleString('vi-VN')} ₫
-                    </div>
-                    <div className="text-slate-400 text-[11px]">
-                      {new Date(quo.quoteDate).toLocaleDateString('vi-VN')}
-                    </div>
-                  </div>
+                  <RiskTagBadge code={tag.code} label={tag.label} />
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                    {tag.description}
+                  </p>
                 </div>
               ))}
             </div>
-          )}
+          </div>
 
-          {customerOrders.length > 0 && (
-            <div className="pt-1 text-xs text-slate-500">
-              <span>Đơn hàng đã ghi nhận ({customerOrders.length} đơn): </span>
-              {customerOrders.map((o) => (
-                <span key={o.id} className="font-mono text-emerald-700 dark:text-emerald-400 font-medium mr-2">
-                  {o.code} ({o.totalAmount.toLocaleString('vi-VN')} ₫ - {o.status})
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 4. Issue Checklist from Issue Catalog */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Checklist Chấm Lỗi (Catalog v1.4)
-            </h4>
-            <span className="text-[11px] text-slate-400">
-              Chọn lỗi để tạo Action giao cho Sale
+          {/* Source Quote / Order Context */}
+          <div className="space-y-1.5 pt-1">
+            <span className="text-xs font-semibold uppercase text-slate-500 block">
+              Dữ liệu Báo giá & Đơn hàng nguồn:
             </span>
-          </div>
-
-          <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-            {issueDefinitions.map((def) => {
-              const isChecked = selectedIssueCodes.includes(def.issueCode);
-              return (
-                <label
-                  key={def.id}
-                  className={`flex items-start gap-2.5 p-2.5 rounded-md border transition-colors cursor-pointer ${
-                    isChecked
-                      ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => handleToggleIssue(def.issueCode)}
-                    disabled={!canAudit}
-                    className="mt-0.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-                  />
-                  <div className="flex-1 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-slate-900 dark:text-slate-100">
-                        [{def.issueCode}] {def.issueName}
-                      </span>
-                      <SeverityBadge severity={def.severity} hardFail={def.hardFail} />
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Nhóm: {def.issueGroupName}
-                    </p>
-                    {!def.isDefinitionComplete && (
-                      <span className="inline-block mt-0.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                        ⚠️ Lỗi chưa duyệt mức độ: cho phép ghi nhận nhưng không kích hoạt chế tài tự động.
-                      </span>
-                    )}
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* 5. Auditor Notes & Guidance */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-            Ghi chú & Hướng dẫn khắc phục cho Sale
-          </label>
-          <textarea
-            rows={2}
-            placeholder="Ghi rõ hành động sale cần thực hiện, tiêu chí nghiệm thu và deadline..."
-            value={generalNotes}
-            onChange={(e) => setGeneralNotes(e.target.value)}
-            disabled={!canAudit}
-            className="w-full text-xs p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60"
-          />
-        </div>
-
-        {/* 6. Evidence attachments */}
-        <EvidencePreview
-          evidenceList={evidences}
-          allowAdd={canAudit}
-          onAddEvidence={handleAddEvidence}
-          title="Bằng chứng sai phạm phát hiện (Evidence)"
-        />
-
-        {/* Footer Actions */}
-        <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="text-xs">
-            {isPass ? (
-              <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4" /> Không chọn lỗi: Case sẽ ĐẠT (PASS)
-              </span>
+            {customerQuotes.length === 0 ? (
+              <p className="text-xs text-slate-500 p-2.5 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
+                Không tìm thấy báo giá nào trong hệ thống CRM/ERP (Phù hợp rule Chưa báo giá 2 ngày).
+              </p>
             ) : (
-              <span className="text-rose-700 dark:text-rose-400 font-medium flex items-center gap-1">
-                <XCircle className="w-4 h-4" /> Đã chọn {selectedIssueCodes.length} lỗi: Case KHÔNG ĐẠT (Tạo Action)
-              </span>
+              <div className="space-y-1.5">
+                {customerQuotes.map((q) => (
+                  <div
+                    key={q.id}
+                    className="p-2.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-xs flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">{q.code}</span>
+                      <span className="text-slate-500 ml-2">{q.itemsSummary}</span>
+                    </div>
+                    <div className="font-bold text-slate-900 dark:text-slate-100">
+                      {q.totalAmount.toLocaleString('vi-VN')} ₫
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {customerOrders.length > 0 && (
+              <div className="pt-1 text-xs text-slate-600 dark:text-slate-400">
+                Đơn hàng đã ghi nhận ({customerOrders.length} đơn):{' '}
+                {customerOrders.map((o) => (
+                  <span key={o.id} className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold mr-2">
+                    {o.code} ({o.totalAmount.toLocaleString('vi-VN')} ₫)
+                  </span>
+                ))}
+              </div>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
-            >
-              Hủy
-            </button>
-            <button
-              type="button"
-              onClick={handleCompleteAudit}
-              disabled={isSubmitting || !canAudit}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-md text-white shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50 ${
-                isPass
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : 'bg-rose-600 hover:bg-rose-700'
-              }`}
-            >
-              <Send className="w-3.5 h-3.5" />
-              {isPass ? 'Chốt Case ĐẠT (PASS)' : 'Giao Action Khắc Phục (FAIL)'}
-            </button>
+          {/* Issue Checklist Selection */}
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-slate-500">
+                Checklist chọn lỗi để giao Action cho Sale:
+              </span>
+              <span className="text-xs text-slate-400">
+                Đã chọn: <strong>{selectedIssueCodes.length}</strong> lỗi
+              </span>
+            </div>
+
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {issueDefinitions.map((def) => {
+                const isChecked = selectedIssueCodes.includes(def.issueCode);
+                return (
+                  <label
+                    key={def.id}
+                    className={`flex items-start gap-3 p-2.5 rounded-md border transition-colors cursor-pointer text-sm ${
+                      isChecked
+                        ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleIssue(def.issueCode)}
+                      disabled={!canAudit}
+                      className="mt-0.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">
+                          [{def.issueCode}] {def.issueName}
+                        </span>
+                        <SeverityBadge severity={def.severity} hardFail={def.hardFail} />
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Nhóm: {def.issueGroupName}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* ================= PHẦN 3: KẾT LUẬN CỦA AUDITOR ================= */}
+        <div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-lg border-2 border-slate-300 dark:border-slate-700 space-y-3.5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 flex items-center justify-center font-bold text-xs">
+                3
+              </span>
+              Kết luận của Auditor
+            </h3>
+            <span className="text-xs font-semibold text-slate-500">
+              Auditor là người quyết định cuối cùng
+            </span>
+          </div>
+
+          {/* Ghi chú kiểm tra */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-1">
+              Ghi chú kiểm tra & Hướng dẫn cho Sale:
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Ghi rõ nhận định, hướng dẫn khắc phục và deadline..."
+              value={generalNotes}
+              onChange={(e) => setGeneralNotes(e.target.value)}
+              disabled={!canAudit}
+              className="w-full text-sm p-2.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60"
+            />
+          </div>
+
+          {/* Bằng chứng phát hiện */}
+          <EvidencePreview
+            evidenceList={evidences}
+            allowAdd={canAudit}
+            onAddEvidence={handleAddEvidence}
+            title="Bằng chứng sai phạm phát hiện (Evidence)"
+          />
+
+          {/* Hai nút lớn cho kết luận */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-700">
+            <div className="text-sm font-medium">
+              {isPass ? (
+                <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-5 h-5" /> Không chọn lỗi: Case sẽ được tính ĐẠT (PASS)
+                </span>
+              ) : (
+                <span className="text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+                  <XCircle className="w-5 h-5" /> Đã chọn {selectedIssueCodes.length} lỗi: Sẽ tự động tạo Action
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md transition-colors"
+              >
+                Đóng
+              </button>
+
+              {isPass ? (
+                <button
+                  type="button"
+                  onClick={() => handleCompleteAudit(false)}
+                  disabled={isSubmitting || !canAudit}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-md text-sm shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Chốt Case ĐẠT (PASS)</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleCompleteAudit(false)}
+                  disabled={isSubmitting || !canAudit}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-md text-sm shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Giao Action Khắc Phục (FAIL)</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

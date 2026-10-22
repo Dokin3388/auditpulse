@@ -76,7 +76,7 @@ export const RecheckTodayView: React.FC<RecheckTodayViewProps> = ({
             </span>
             <span className="text-xs text-slate-500">Ngày audit: 20/10/2026</span>
           </div>
-          <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
             Hàng chờ Recheck Hôm nay
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -95,7 +95,7 @@ export const RecheckTodayView: React.FC<RecheckTodayViewProps> = ({
       </div>
 
       {/* Filter bar */}
-      <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+      <div className="bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2.5">
         <div className="relative w-full sm:w-72">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
           <input

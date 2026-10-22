@@ -5,11 +5,10 @@ import {
   Layers,
   CheckSquare,
   Clock,
-  Users2,
+  UserRoundCog,
   TrendingUp,
   FileBarChart,
   Settings,
-  UserRoundCog,
 } from 'lucide-react';
 
 export type NavTab =
@@ -18,9 +17,9 @@ export type NavTab =
   | 'action-detail'
   | 'recheck-today'
   | 'portfolio'
+  | 'assignments'
   | 'performance'
   | 'reports'
-  | 'assignments'
   | 'settings';
 
 interface SidebarProps {
@@ -29,7 +28,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-  const { filteredQueueItems, filteredActions, teamChangeAlerts, currentUser } = useAuditStore();
+  const { filteredQueueItems, filteredActions, currentUser } = useAuditStore();
 
   const pendingQueueCount = filteredQueueItems.filter(
     (q) => q.status === 'ASSIGNED' || q.status === 'IN_REVIEW' || q.status === 'PENDING'
@@ -38,8 +37,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   const urgentRecheckCount = filteredActions.filter(
     (a) => a.status === 'SALE_MARKED_DONE' || a.isOverdue
   ).length;
-
-  const unreviewedTeamAlerts = teamChangeAlerts.filter((a) => !a.reviewed).length;
 
   const navItems = [
     {
@@ -53,28 +50,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       label: 'Audit Queue',
       icon: Layers,
       badge: pendingQueueCount > 0 ? pendingQueueCount : null,
-      badgeColor: 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200',
+      badgeColor: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
     },
     {
       id: 'action-detail' as NavTab,
       label: 'Sale Action',
       icon: CheckSquare,
       badge: filteredActions.length > 0 ? filteredActions.length : null,
-      badgeColor: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+      badgeColor: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
     },
     {
       id: 'recheck-today' as NavTab,
       label: 'Recheck hôm nay',
       icon: Clock,
       badge: urgentRecheckCount > 0 ? urgentRecheckCount : null,
-      badgeColor: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
-    },
-    {
-      id: 'portfolio' as NavTab,
-      label: 'Auditor Portfolio',
-      icon: Users2,
-      badge: unreviewedTeamAlerts > 0 ? `${unreviewedTeamAlerts} đổi team` : null,
-      badgeColor: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200',
+      badgeColor: 'bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200',
     },
     {
       id: 'assignments' as NavTab,
@@ -96,46 +86,49 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     },
     {
       id: 'settings' as NavTab,
-      label: 'Catalog & Cấu hình',
+      label: 'Cấu hình',
       icon: Settings,
       badge: null,
     },
   ];
 
   return (
-    <aside className="w-56 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 min-h-[calc(100vh-90px)] transition-colors">
-      <div className="p-3 flex-1 space-y-0.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5 py-1.5">
+    <aside className="w-[230px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 sticky top-14 h-[calc(100vh-56px)] transition-colors">
+      <div className="p-3 flex-1 space-y-1">
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-3 py-2">
           Phân hệ tác vụ
         </div>
 
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.id;
+          // Treat 'portfolio' as 'assignments' if active
+          const isActive = activeTab === item.id || (item.id === 'assignments' && activeTab === 'portfolio');
           return (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs transition-colors text-left ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-sm transition-all text-left ${
                 isActive
-                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold border-l-2 border-slate-900 dark:border-slate-100'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-850'
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold shadow-sm'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 font-medium'
               }`}
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <Icon
                   className={`w-4 h-4 shrink-0 ${
                     isActive
-                      ? 'text-slate-900 dark:text-white'
-                      : 'text-slate-400 group-hover:text-slate-600'
+                      ? 'text-white dark:text-slate-900'
+                      : 'text-slate-500 dark:text-slate-400'
                   }`}
                 />
                 <span className="truncate">{item.label}</span>
               </div>
               {item.badge !== null && item.badge !== undefined && (
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded font-medium shrink-0 ml-1.5 ${
-                    item.badgeColor || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                  className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ml-1.5 ${
+                    isActive
+                      ? 'bg-white/20 text-white dark:bg-slate-900/20 dark:text-slate-900'
+                      : item.badgeColor || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                   }`}
                 >
                   {item.badge}
@@ -146,14 +139,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         })}
       </div>
 
-      {/* Footer info */}
-      <div className="p-3 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 space-y-1.5">
+      {/* Footer Info */}
+      <div className="p-3.5 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 space-y-1">
         <div className="flex items-center justify-between px-1">
-          <span className="font-medium text-slate-600 dark:text-slate-400">AuditFlow Spec</span>
-          <span className="font-mono text-[10px]">v1.1</span>
+          <span className="font-semibold text-slate-700 dark:text-slate-300">AuditPulse</span>
+          <span className="font-mono text-xs">v1.1</span>
         </div>
-        <div className="px-1 text-[10px] text-slate-400 leading-tight">
-          Role: <strong className="text-slate-600 dark:text-slate-300">{currentUser.role}</strong>
+        <div className="px-1 text-slate-600 dark:text-slate-400">
+          Vai trò: <strong className="text-slate-800 dark:text-slate-200">{currentUser.role}</strong>
         </div>
       </div>
     </aside>

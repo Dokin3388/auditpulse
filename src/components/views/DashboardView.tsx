@@ -77,10 +77,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
             <span className="text-slate-400 text-xs">Kỳ audit: 20/10/2026</span>
           </div>
-          <h1 className="text-base font-semibold tracking-tight text-white">
+          <h1 className="text-2xl font-bold tracking-tight text-white">
             Tổng quan Rủi ro Vận hành & Cứu Đơn
           </h1>
-          <p className="text-xs text-slate-400">
+          <p className="text-sm text-slate-300">
             {currentUser.role === 'SALE'
               ? `Bạn có ${filteredActions.filter((a) => a.status === 'OPEN' || a.status === 'REOPENED').length} action cần khắc phục ngay.`
               : currentUser.role === 'AUDITOR'
@@ -144,7 +144,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="text-2xl font-semibold text-slate-900 dark:text-white tabular-nums">
                 {filteredQueueItems.filter((q) => q.status === 'ASSIGNED' || q.status === 'IN_REVIEW' || q.status === 'PENDING').length}
               </span>
-              <span className="text-xs text-slate-400">/ {totalQueue} tổng ca</span>
+              <span className="text-sm text-slate-300">/ {totalQueue} tổng ca</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
@@ -171,7 +171,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span className="text-2xl font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
                 {overdueActions.length}
               </span>
-              <span className="text-xs text-slate-400">cần đôn đốc sale</span>
+              <span className="text-sm text-slate-300">cần đôn đốc sale</span>
             </div>
           </div>
           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
