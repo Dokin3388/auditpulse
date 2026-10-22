@@ -37,23 +37,13 @@ import {
 
 import {
   mockUsers,
-  mockCustomers,
-  mockQuotations,
-  mockSalesOrders,
-  mockAuditQueueItems,
-  mockIssueDefinitions,
-  mockAuditCases,
-  mockCorrectiveActions,
-  mockAuditorAssignments,
-  mockTeamChangeAlerts,
-  mockAuditorPerformanceMetrics,
-  mockSourceSyncLogs,
-  mockAuditTrailEvents,
 } from './mockData';
 import {
   getAuditQueue,
+  getAppUsers,
   getAuditorAssignments,
   getCorrectiveActions,
+  createAssignment,
   getRescuedOrders,
 } from './api';
 
@@ -200,20 +190,20 @@ function deriveRescuedOrders(
 export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserProfile }> = ({ children, initialUser }) => {
   // Current logged in user comes from the real authenticated session.
   const [currentUser, setCurrentUser] = useState<UserProfile>(initialUser || mockUsers[0]);
-  const [allUsers] = useState<UserProfile[]>(mockUsers);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>(initialUser ? [initialUser] : []);
 
   // Core reactive entities
-  const [queueItems, setQueueItems] = useState<AuditQueueItem[]>(mockAuditQueueItems);
-  const [auditCases, setAuditCases] = useState<AuditCase[]>(mockAuditCases);
-  const [correctiveActions, setCorrectiveActions] = useState<CorrectiveAction[]>(mockCorrectiveActions);
-  const [issueDefinitions, setIssueDefinitions] = useState<IssueDefinition[]>(mockIssueDefinitions);
-  const [auditorAssignments, setAuditorAssignments] = useState<AuditorAssignment[]>(mockAuditorAssignments);
-  const [teamChangeAlerts, setTeamChangeAlerts] = useState<SaleTeamChangeAlert[]>(mockTeamChangeAlerts);
-  const [sourceSyncLogs, setSourceSyncLogs] = useState<SourceSyncLog[]>(mockSourceSyncLogs);
-  const [auditTrail, setAuditTrail] = useState<AuditTrailEvent[]>(mockAuditTrailEvents);
-  const [customers] = useState<Customer[]>(mockCustomers);
-  const [quotations] = useState<Quotation[]>(mockQuotations);
-  const [salesOrders] = useState<SalesOrder[]>(mockSalesOrders);
+  const [queueItems, setQueueItems] = useState<AuditQueueItem[]>([]);
+  const [auditCases, setAuditCases] = useState<AuditCase[]>([]);
+  const [correctiveActions, setCorrectiveActions] = useState<CorrectiveAction[]>([]);
+  const [issueDefinitions, setIssueDefinitions] = useState<IssueDefinition[]>([]);
+  const [auditorAssignments, setAuditorAssignments] = useState<AuditorAssignment[]>([]);
+  const [teamChangeAlerts, setTeamChangeAlerts] = useState<SaleTeamChangeAlert[]>([]);
+  const [sourceSyncLogs, setSourceSyncLogs] = useState<SourceSyncLog[]>([]);
+  const [auditTrail, setAuditTrail] = useState<AuditTrailEvent[]>([]);
+  const [customers] = useState<Customer[]>([]);
+  const [quotations] = useState<Quotation[]>([]);
+  const [salesOrders] = useState<SalesOrder[]>([]);
   const [liveRescuedOrders, setLiveRescuedOrders] = useState<RescuedOrder[] | null>(null);
 
   // The UI remains usable before Neon has source data. As soon as an endpoint
@@ -222,20 +212,26 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     let cancelled = false;
 
     void Promise.allSettled([
+      getAppUsers(),
       getAuditQueue(),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
     ])
-      .then(([queueResult, actionResult, assignmentResult, rescueResult]) => {
+      .then(([usersResult, queueResult, actionResult, assignmentResult, rescueResult]) => {
         if (cancelled) return;
-        if (queueResult.status === 'fulfilled' && queueResult.value.length > 0) {
+        if (usersResult.status === 'fulfilled') {
+          setAllUsers(usersResult.value);
+          const sessionUser = usersResult.value.find((user) => user.email.toLowerCase() === initialUser?.email.toLowerCase());
+          if (sessionUser) setCurrentUser(sessionUser);
+        }
+        if (queueResult.status === 'fulfilled') {
           setQueueItems(queueResult.value);
         }
-        if (actionResult.status === 'fulfilled' && actionResult.value.length > 0) {
+        if (actionResult.status === 'fulfilled') {
           setCorrectiveActions(actionResult.value);
         }
-        if (assignmentResult.status === 'fulfilled' && assignmentResult.value.length > 0) {
+        if (assignmentResult.status === 'fulfilled') {
           setAuditorAssignments(assignmentResult.value);
         }
         if (rescueResult.status === 'fulfilled') setLiveRescuedOrders(rescueResult.value);
@@ -244,7 +240,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialUser]);
 
   // Switch demo user
   const switchUser = (userId: string) => {
@@ -307,27 +303,39 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
   }, [correctiveActions, salesOrders, customers]);
   const rescuedOrders = liveRescuedOrders ?? derivedRescuedOrders;
 
-  // Dynamically derive performance metrics for the 3 auditors based on actual records
+  // Dynamically derive performance metrics from real users/actions/rescued orders.
   const performanceMetrics = useMemo<AuditorPerformanceMetric[]>(() => {
-    return mockAuditorPerformanceMetrics.map((baseMetric) => {
+    return allUsers.filter((user) => user.role === 'AUDITOR' && user.auditorId).map((auditor) => {
+      const auditorId = auditor.auditorId || auditor.id;
       const auditorRescued = rescuedOrders.filter(
-        (r) => r.auditorId === baseMetric.auditorId && r.attributionStatus === 'AUDIT_ASSISTED'
+        (r) => r.auditorId === auditorId && r.attributionStatus === 'AUDIT_ASSISTED'
       );
       const count = auditorRescued.length;
       const value = auditorRescued.reduce((sum, r) => sum + r.orderValue, 0);
-      const rescueRate =
-        baseMetric.evaluationCohortSize > 0
-          ? Math.round((count / baseMetric.evaluationCohortSize) * 1000) / 10
-          : 0;
+      const auditedCount = auditCases.filter((item) => item.auditorId === auditorId).length;
+      const rescueRate = auditedCount > 0 ? Math.round((count / auditedCount) * 1000) / 10 : 0;
 
       return {
-        ...baseMetric,
+        auditorId,
+        auditorName: auditor.name,
+        avatarUrl: auditor.avatarUrl || '',
+        auditThroughput: auditedCount,
+        auditTarget: 0,
+        slaComplianceRate: 0,
+        overdueBacklog: 0,
+        medianHandlingMinutes: 0,
+        qaAgreementRate: 0,
+        qaReturnRate: 0,
+        onTimeRecheckRate: 0,
+        reopenedActionRate: 0,
+        salePerformanceDeltaPct: 0,
+        evaluationCohortSize: auditedCount,
         rescuedOrdersCount: count,
         rescuedOrdersValue: value,
         rescueRate,
       };
     });
-  }, [rescuedOrders]);
+  }, [allUsers, auditCases, rescuedOrders]);
 
   // SALE FLOW: Mark Action as Done (Strict RBAC: Only assigned sale owner)
   const saleMarkActionDone = (actionId: string, notes: string, evidence?: Evidence) => {
@@ -536,7 +544,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có quyền điều chỉnh phân công Auditor.' };
     }
 
-    const sale = allUsers.find((u) => u.saleId === saleId) || mockUsers.find((u) => u.saleId === saleId);
+    const sale = allUsers.find((u) => u.saleId === saleId);
     const auditor = allUsers.find((u) => u.auditorId === auditorId);
     const saleName = sale ? sale.name : 'Sale ' + saleId;
     const auditorName = auditor ? auditor.name : 'Auditor ' + auditorId;
@@ -558,9 +566,11 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       return { success: false, message: resolution.message };
     }
 
-    if (resolution.updatedAssignments) {
-      setAuditorAssignments(resolution.updatedAssignments);
-    }
+    if (resolution.updatedAssignments) setAuditorAssignments(resolution.updatedAssignments);
+    void createAssignment({ saleId, auditorId, effectiveFrom, reason }).catch((error: unknown) => {
+      setAuditorAssignments(auditorAssignments);
+      addTrailEvent('AUDITOR_ASSIGNMENT_SAVE_FAILED', `Phân công chưa lưu được lên Neon cho ${saleName}.`, error instanceof Error ? error.message : undefined);
+    });
 
     // Clear any open team change alert for this sale
     setTeamChangeAlerts((prev) =>
@@ -629,6 +639,10 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     }
 
     setAuditorAssignments(plannedAssignments);
+    void Promise.all(uniqueSaleIds.map((saleId) => createAssignment({ saleId, auditorId, effectiveFrom, reason }))).catch((error: unknown) => {
+      setAuditorAssignments(auditorAssignments);
+      addTrailEvent('AUDITOR_ASSIGNMENT_SAVE_FAILED', 'Phân công portfolio chưa lưu được lên Neon.', error instanceof Error ? error.message : undefined);
+    });
     setTeamChangeAlerts((previous) =>
       previous.map((alert) =>
         uniqueSaleIds.includes(alert.saleId) ? { ...alert, reviewed: true } : alert

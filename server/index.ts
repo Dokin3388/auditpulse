@@ -83,8 +83,30 @@ app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
 });
 
 // All operational data routes require a real AuditPulse session.
-app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding'], requireAppSession);
+app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users'], requireAppSession);
 app.use('/api/sync/google-sheets/issue-logs', requireAppSession);
+
+app.get('/api/users', async (req: Request, res: Response) => {
+  try {
+    const role = typeof req.query.role === 'string' ? req.query.role : null;
+    const values: unknown[] = [];
+    const roleClause = role ? `AND u.role = $${values.push(role)}` : '';
+    const result = await query(`
+      SELECT u.id, u.email, u.name, u.role, u.avatar_url AS "avatarUrl", u.is_active AS "isActive",
+             ap.auditor_code AS "auditorId", sp.sale_code AS "saleId",
+             t.id AS "teamId", t.name AS "teamName"
+      FROM app_users u
+      LEFT JOIN auditor_profiles ap ON ap.id = u.id
+      LEFT JOIN sales_profiles sp ON sp.id = u.id
+      LEFT JOIN teams t ON t.id = COALESCE(sp.team_id, NULL)
+      WHERE u.is_active = true ${roleClause}
+      ORDER BY u.role, u.name`, values);
+    res.json({ data: result.rows });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error retrieving users';
+    res.status(500).json({ error: message });
+  }
+});
 
 // ============================================================================
 // 1. HEALTH & METRICS

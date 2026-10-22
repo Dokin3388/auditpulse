@@ -5,6 +5,7 @@ import type {
   RescuedOrder,
   RiskTag,
   RiskTagCode,
+  UserProfile,
 } from '../types';
 
 export interface GoogleSheetSyncRun {
@@ -25,6 +26,28 @@ export interface SourceIssueLog {
   sourceRowKey: string;
   payload: Record<string, string>;
   lastSyncedAt: string;
+}
+
+export async function getAppUsers(): Promise<UserProfile[]> {
+  return getList<UserProfile>('/api/users');
+}
+
+export async function createAssignment(input: {
+  saleId: string;
+  auditorId: string;
+  effectiveFrom: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch('/api/assignments', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || 'Không thể lưu phân công lên Neon.');
+  }
 }
 
 interface ApiListResponse<T> {
