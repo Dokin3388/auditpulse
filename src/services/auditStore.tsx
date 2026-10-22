@@ -42,6 +42,7 @@ import {
   getAuditQueue,
   getAppUsers,
   getIssueDefinitions,
+  materializeAuditQueue,
   getAuditorAssignments,
   getCorrectiveActions,
   createAssignment,
@@ -215,7 +216,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     void Promise.allSettled([
       getAppUsers(),
       getIssueDefinitions(),
-      getAuditQueue(),
+      materializeAuditQueue().then(() => getAuditQueue()),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
