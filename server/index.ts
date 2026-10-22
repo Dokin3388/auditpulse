@@ -239,7 +239,36 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         q.snapshot_auditor_name AS "assignedAuditorName",
         q.assigned_at AS "assignedAt",
         q.status,
-        q.risk_tags AS "riskTags",
+        (
+          CASE WHEN c.first_seen_date::date = q.audit_date - 1
+            THEN jsonb_build_array(jsonb_build_object(
+              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách mới hôm qua',
+              'description', 'Khách được ghi nhận vào ngày D-1.', 'detectedAt', q.audit_date::text
+            )) ELSE '[]'::jsonb END
+          || CASE WHEN NOT EXISTS (
+            SELECT 1 FROM quotations qt
+            WHERE qt.customer_id = q.customer_id
+              AND qt.quote_date::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
+          ) THEN jsonb_build_array(jsonb_build_object(
+            'code', 'NO_QUOTATION', 'label', 'Chưa báo giá',
+            'description', 'Không có báo giá trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
+          )) ELSE '[]'::jsonb END
+          || CASE WHEN EXISTS (
+            SELECT 1 FROM quotations qt
+            WHERE qt.customer_id = q.customer_id
+              AND qt.quote_date::date BETWEEN q.audit_date - 7 AND q.audit_date - 1
+              AND NOT EXISTS (
+                SELECT 1 FROM sales_orders so
+                WHERE so.customer_id = q.customer_id AND so.status = 'VALID'
+                  AND so.order_date::date >= qt.quote_date::date
+                  AND so.order_date::date <= q.audit_date
+              )
+          ) THEN jsonb_build_array(jsonb_build_object(
+            'code', 'QUOTED_NOT_ORDERED', 'label', 'Báo giá chưa chốt',
+            'description', 'Có báo giá trong 7 ngày nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
+          )) ELSE '[]'::jsonb END
+          || COALESCE(q.risk_tags, '[]'::jsonb)
+        ) AS "riskTags",
         q.active_action_id AS "activeActionId",
         q.rule_version AS "ruleVersion",
         q.sync_timestamp AS "syncTimestamp",
