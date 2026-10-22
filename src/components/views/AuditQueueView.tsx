@@ -20,6 +20,9 @@ interface AuditQueueViewProps {
   initialSelectedId?: string | null;
 }
 
+const todayInVietnam = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+
 export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   onNavigateToAction,
   initialSelectedId,
@@ -37,7 +40,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const [selectedAuditor, setSelectedAuditor] = useState<string>('ALL');
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [selectedAuditDate, setSelectedAuditDate] = useState<string>('');
+  // Operational queue always opens on today's audit date. Historical dates
+  // remain available only when the Head Auditor explicitly selects them.
+  const [selectedAuditDate, setSelectedAuditDate] = useState<string>(todayInVietnam);
 
   // Selected item for audit modal
   const [activeQueueItem, setActiveQueueItem] = useState<AuditQueueItem | null>(() => {
@@ -58,7 +63,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   );
 
   // Start on the newest available audit day
-  const effectiveAuditDate = selectedAuditDate === '__ALL__' ? '' : selectedAuditDate || availableAuditDates[0] || '';
+  const effectiveAuditDate = selectedAuditDate === '__ALL__' ? '' : selectedAuditDate;
 
   // Items scoped to the selected audit date
   const dateScopedItems = useMemo(() => {
@@ -144,7 +149,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     setSelectedAuditor('ALL');
     setSelectedTag('ALL');
     setSelectedStatus('ALL');
-    setSelectedAuditDate(availableAuditDates[0] || '');
+    setSelectedAuditDate(todayInVietnam());
   };
 
   const hasActiveFilters = Boolean(
@@ -153,7 +158,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     selectedAuditor !== 'ALL' ||
     selectedTag !== 'ALL' ||
     selectedStatus !== 'ALL' ||
-    (selectedAuditDate && selectedAuditDate !== availableAuditDates[0])
+    (selectedAuditDate && selectedAuditDate !== todayInVietnam())
   );
 
   const activeFilterList = useMemo(() => {
