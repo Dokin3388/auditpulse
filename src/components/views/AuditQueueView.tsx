@@ -35,6 +35,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedAuditDate, setSelectedAuditDate] = useState<string>('');
+  const [showAllDates, setShowAllDates] = useState(false);
 
   // Selected item for audit modal
   const [activeQueueItem, setActiveQueueItem] = useState<AuditQueueItem | null>(() => {
@@ -55,7 +56,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   );
   // Start on the newest available audit day so an old backlog never masks
   // today's operational work when the queue is opened.
-  const effectiveAuditDate = selectedAuditDate || availableAuditDates[0] || '';
+  const effectiveAuditDate = showAllDates ? '' : selectedAuditDate || availableAuditDates[0] || '';
 
   // Apply filters
   const filteredData = useMemo(() => {
@@ -124,6 +125,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     setSelectedTag('ALL');
     setSelectedStatus('ALL');
     setSelectedAuditDate('');
+    setShowAllDates(false);
   };
 
   return (
@@ -166,13 +168,20 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           </div>
 
           {/* Filter audit date */}
-          <div>
+          <div className="flex gap-1.5">
             <input
               type="date"
               value={effectiveAuditDate}
-              onChange={(e) => setSelectedAuditDate(e.target.value)}
-              className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
+              onChange={(e) => { setShowAllDates(false); setSelectedAuditDate(e.target.value); }}
+              className="min-w-0 flex-1 text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             />
+            <button
+              type="button"
+              onClick={() => { setShowAllDates(true); setSelectedAuditDate(''); }}
+              className={`shrink-0 px-2 py-1.5 text-[11px] rounded-md border ${showAllDates ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+            >
+              Tất cả ngày
+            </button>
           </div>
 
           {/* Filter Team */}
@@ -204,7 +213,14 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           <div>
             <select
               value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
+              onChange={(e) => {
+                const nextTag = e.target.value;
+                setSelectedTag(nextTag);
+                // A risk-tag search is normally a cross-day investigation.
+                // If the date was only implicit (latest day), broaden it so
+                // tags from older available audit days are not hidden.
+                if (nextTag !== 'ALL' && !selectedAuditDate) setShowAllDates(true);
+              }}
               className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Risk Tags</option>
