@@ -83,7 +83,7 @@ app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
 });
 
 // All operational data routes require a real AuditPulse session.
-app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin'], requireAppSession);
+app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin', '/api/issue-definitions'], requireAppSession);
 app.use('/api/sync/google-sheets/issue-logs', requireAppSession);
 
 app.get('/api/users', async (req: Request, res: Response) => {
@@ -104,6 +104,24 @@ app.get('/api/users', async (req: Request, res: Response) => {
     res.json({ data: result.rows });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error retrieving users';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get('/api/issue-definitions', async (_req: Request, res: Response) => {
+  try {
+    const result = await query(`
+      SELECT id, issue_code AS "issueCode", issue_name AS "issueName",
+             issue_group_code AS "issueGroupCode", issue_group_name AS "issueGroupName",
+             severity, hard_fail AS "hardFail",
+             is_definition_complete AS "isDefinitionComplete", is_current AS "isCurrent",
+             version, COALESCE(recheck_guidance_template, '') AS "recheckGuidanceTemplate"
+      FROM issue_definitions
+      WHERE is_current = true
+      ORDER BY issue_group_name, issue_code`);
+    res.json({ data: result.rows });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể tải danh mục lỗi.';
     res.status(500).json({ error: message });
   }
 });
@@ -766,7 +784,11 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
 
     // 2. Fetch sale & auditor metadata
     const userRes = await query(
-      `SELECT id, name, role FROM app_users WHERE id IN ($1, $2)`,
+      `SELECT u.id, u.name, u.role, t.name AS "teamName"
+       FROM app_users u
+       LEFT JOIN sales_profiles sp ON sp.id = u.id
+       LEFT JOIN teams t ON t.id = sp.team_id
+       WHERE u.id IN ($1, $2)`,
       [saleId, auditorId]
     );
 
@@ -775,7 +797,7 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
 
     const saleName = saleUser?.name || `Sale ${saleId}`;
     const auditorName = auditorUser?.name || `Auditor ${auditorId}`;
-    const teamName = 'Team B2B Miền Bắc';
+    const teamName = saleUser?.teamName || 'Chưa có team';
 
     // 3. Resolve interval chain using domain math
     const resolution = resolveAssignmentChain(existingRes.rows as any, {
