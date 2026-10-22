@@ -25,6 +25,13 @@ function text(value: unknown): string {
   return String(value ?? '').trim();
 }
 
+/** Keep normalized VARCHAR fields within their database contract. The full
+ * source cell remains available in google_sheet_row_state for traceability.
+ */
+function boundedText(value: unknown, maxLength: number): string {
+  return text(value).slice(0, maxLength);
+}
+
 export function normalizeGoogleSheetHeader(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim().toLowerCase().replace(/\s+/g, '_');
 }
@@ -243,7 +250,7 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
        ON CONFLICT (code) DO UPDATE SET
          name = EXCLUDED.name, phone = EXCLUDED.phone, channel = EXCLUDED.channel,
          current_sale_id = EXCLUDED.current_sale_id, current_team_id = EXCLUDED.current_team_id`,
-      [code, row.ten_kh, primaryGoogleSheetPhone(row.so_dien_thoai), row.nguon_khach_hang || null, dateOrNow(row.thoi_gian), saleId, teamId]
+      [code, row.ten_kh, primaryGoogleSheetPhone(row.so_dien_thoai), boundedText(row.nguon_khach_hang, 100) || null, dateOrNow(row.thoi_gian), saleId, teamId]
     );
     return true;
   }
@@ -347,7 +354,7 @@ async function applyCustomerRows(
       code,
       row.ten_kh,
       primaryGoogleSheetPhone(row.so_dien_thoai),
-      row.nguon_khach_hang || null,
+      boundedText(row.nguon_khach_hang, 100) || null,
       dateOrNow(row.thoi_gian),
       saleIds.get(text(row.nguoi_phu_trach).toLowerCase()) || null,
       teamIds.get(text(row.team).toLowerCase()) || null
