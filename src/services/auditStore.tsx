@@ -41,6 +41,8 @@ import {
 import {
   getAuditQueue,
   getAppUsers,
+  getIssueDefinitions,
+  materializeAuditQueue,
   getAuditorAssignments,
   getCorrectiveActions,
   createAssignment,
@@ -213,18 +215,24 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
     void Promise.allSettled([
       getAppUsers(),
-      getAuditQueue(),
+      getIssueDefinitions(),
+      // Refresh from the issue log when possible, but never hide the existing
+      // queue if the refresh endpoint is slow or temporarily unavailable.
+      materializeAuditQueue()
+        .catch(() => undefined)
+        .then(() => getAuditQueue()),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
     ])
-      .then(([usersResult, queueResult, actionResult, assignmentResult, rescueResult]) => {
+      .then(([usersResult, issuesResult, queueResult, actionResult, assignmentResult, rescueResult]) => {
         if (cancelled) return;
         if (usersResult.status === 'fulfilled') {
           setAllUsers(usersResult.value);
           const sessionUser = usersResult.value.find((user) => user.email.toLowerCase() === initialUser?.email.toLowerCase());
           if (sessionUser) setCurrentUser(sessionUser);
         }
+        if (issuesResult.status === 'fulfilled') setIssueDefinitions(issuesResult.value);
         if (queueResult.status === 'fulfilled') {
           setQueueItems(queueResult.value);
         }

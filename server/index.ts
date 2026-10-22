@@ -83,7 +83,7 @@ app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
 });
 
 // All operational data routes require a real AuditPulse session.
-app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin'], requireAppSession);
+app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin', '/api/issue-definitions'], requireAppSession);
 app.use('/api/sync/google-sheets/issue-logs', requireAppSession);
 
 app.get('/api/users', async (req: Request, res: Response) => {
@@ -104,6 +104,24 @@ app.get('/api/users', async (req: Request, res: Response) => {
     res.json({ data: result.rows });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error retrieving users';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get('/api/issue-definitions', async (_req: Request, res: Response) => {
+  try {
+    const result = await query(`
+      SELECT id, issue_code AS "issueCode", issue_name AS "issueName",
+             issue_group_code AS "issueGroupCode", issue_group_name AS "issueGroupName",
+             severity, hard_fail AS "hardFail",
+             is_definition_complete AS "isDefinitionComplete", is_current AS "isCurrent",
+             version, COALESCE(recheck_guidance_template, '') AS "recheckGuidanceTemplate"
+      FROM issue_definitions
+      WHERE is_current = true
+      ORDER BY issue_group_name, issue_code`);
+    res.json({ data: result.rows });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể tải danh mục lỗi.';
     res.status(500).json({ error: message });
   }
 });
@@ -221,7 +239,36 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         q.snapshot_auditor_name AS "assignedAuditorName",
         q.assigned_at AS "assignedAt",
         q.status,
-        q.risk_tags AS "riskTags",
+        (
+          CASE WHEN c.first_seen_date::date = q.audit_date - 1
+            THEN jsonb_build_array(jsonb_build_object(
+              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách mới hôm qua',
+              'description', 'Khách được ghi nhận vào ngày D-1.', 'detectedAt', q.audit_date::text
+            )) ELSE '[]'::jsonb END
+          || CASE WHEN NOT EXISTS (
+            SELECT 1 FROM quotations qt
+            WHERE qt.customer_id = q.customer_id
+              AND qt.quote_date::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
+          ) THEN jsonb_build_array(jsonb_build_object(
+            'code', 'NO_QUOTATION', 'label', 'Chưa báo giá',
+            'description', 'Không có báo giá trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
+          )) ELSE '[]'::jsonb END
+          || CASE WHEN EXISTS (
+            SELECT 1 FROM quotations qt
+            WHERE qt.customer_id = q.customer_id
+              AND qt.quote_date::date BETWEEN q.audit_date - 7 AND q.audit_date - 1
+              AND NOT EXISTS (
+                SELECT 1 FROM sales_orders so
+                WHERE so.customer_id = q.customer_id AND so.status = 'VALID'
+                  AND so.order_date::date >= qt.quote_date::date
+                  AND so.order_date::date <= q.audit_date
+              )
+          ) THEN jsonb_build_array(jsonb_build_object(
+            'code', 'QUOTED_NOT_ORDERED', 'label', 'Báo giá chưa chốt',
+            'description', 'Có báo giá trong 7 ngày nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
+          )) ELSE '[]'::jsonb END
+          || COALESCE(q.risk_tags, '[]'::jsonb)
+        ) AS "riskTags",
         q.active_action_id AS "activeActionId",
         q.rule_version AS "ruleVersion",
         q.sync_timestamp AS "syncTimestamp",
@@ -229,7 +276,9 @@ app.get('/api/queue', async (req: Request, res: Response) => {
       FROM audit_queue_items q
       JOIN customers c ON c.id = q.customer_id
       ${whereClause}
-      ORDER BY q.created_at ASC;
+      -- Newest audit days are the operational worklist; history remains
+      -- available through the explicit date filter.
+      ORDER BY q.audit_date DESC, q.created_at ASC;
     `;
 
     const result = await query(sql, values);
@@ -269,10 +318,15 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
         ),
       ]);
 
+      const normalizeLookupKey = (value: string) => {
+        const trimmed = value.trim().toLowerCase();
+        if (/^\d+$/.test(trimmed)) return trimmed.replace(/^0+/, '') || '0';
+        return trimmed.replace(/\s+/g, ' ');
+      };
       const byCustomer = new Map<string, { id: string; name: string; phone: string | null }>();
       for (const customer of customers.rows) {
         for (const key of [customer.code, customer.phone, customer.name]) {
-          if (key?.trim()) byCustomer.set(key.trim().toLowerCase(), customer);
+          if (key?.trim()) byCustomer.set(normalizeLookupKey(key), customer);
         }
       }
       const bySale = new Map<string, { id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>();
@@ -293,7 +347,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
       for (const sourceRow of sourceRows.rows) {
         const row = sourceRow.payload || {};
         const date = String(row.date || '').trim().slice(0, 10);
-        const customerKey = String(row.sdt || row.ma_khach_hang || row.khach || '').trim().toLowerCase();
+        const customerKey = normalizeLookupKey(String(row.sdt || row.ma_khach_hang || row.khach || ''));
         const saleKey = String(row.sale || row.sale_name || row.ten_sale || '').trim().toLowerCase();
         const customer = byCustomer.get(customerKey);
         const sale = bySale.get(saleKey);
@@ -766,7 +820,11 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
 
     // 2. Fetch sale & auditor metadata
     const userRes = await query(
-      `SELECT id, name, role FROM app_users WHERE id IN ($1, $2)`,
+      `SELECT u.id, u.name, u.role, t.name AS "teamName"
+       FROM app_users u
+       LEFT JOIN sales_profiles sp ON sp.id = u.id
+       LEFT JOIN teams t ON t.id = sp.team_id
+       WHERE u.id IN ($1, $2)`,
       [saleId, auditorId]
     );
 
@@ -775,7 +833,7 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
 
     const saleName = saleUser?.name || `Sale ${saleId}`;
     const auditorName = auditorUser?.name || `Auditor ${auditorId}`;
-    const teamName = 'Team B2B Miền Bắc';
+    const teamName = saleUser?.teamName || 'Chưa có team';
 
     // 3. Resolve interval chain using domain math
     const resolution = resolveAssignmentChain(existingRes.rows as any, {
