@@ -19,9 +19,9 @@ import type {
 export const mockUsers: UserProfile[] = [
   {
     id: 'USR-HEAD',
-    name: 'Phạm Đức Thắng',
-    email: 'thang.pd@auditpulse.vn',
-    role: 'HEAD_AUDITOR',
+    name: 'Dokin (Head Auditor)',
+    email: 'admin@auditpulse.vn',
+    role: 'ADMIN',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     isActive: true,
   },

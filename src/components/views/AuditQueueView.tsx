@@ -34,6 +34,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const [selectedAuditor, setSelectedAuditor] = useState<string>('ALL');
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [selectedAuditDate, setSelectedAuditDate] = useState<string>('');
 
   // Selected item for audit modal
   const [activeQueueItem, setActiveQueueItem] = useState<AuditQueueItem | null>(() => {
@@ -45,8 +46,16 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
   // Reassignment modal state
   const [reassignItem, setReassignItem] = useState<AuditQueueItem | null>(null);
-  const [newAuditorId, setNewAuditorId] = useState('AUD-01');
+  const [newAuditorId, setNewAuditorId] = useState('');
   const [reassignReason, setReassignReason] = useState('');
+
+  const availableAuditDates = useMemo(
+    () => [...new Set(filteredQueueItems.map((item) => item.auditDate.slice(0, 10)))].sort((a, b) => b.localeCompare(a)),
+    [filteredQueueItems]
+  );
+  // Start on the newest available audit day so an old backlog never masks
+  // today's operational work when the queue is opened.
+  const effectiveAuditDate = selectedAuditDate || availableAuditDates[0] || '';
 
   // Apply filters
   const filteredData = useMemo(() => {
@@ -61,6 +70,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
       // Team
       if (selectedTeam !== 'ALL' && item.teamId !== selectedTeam) return false;
+
+      // Audit date
+      if (effectiveAuditDate && item.auditDate.slice(0, 10) !== effectiveAuditDate) return false;
 
       // Auditor
       if (selectedAuditor !== 'ALL') {
@@ -82,15 +94,20 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
       return true;
     });
-  }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus]);
+  }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus, effectiveAuditDate]);
 
   // Auditor list for reassignment
   const auditorOptions = allUsers.filter((u) => u.role === 'AUDITOR');
+  const teamOptions = useMemo(
+    () => [...new Map(allUsers.filter((u) => u.role === 'SALE' && u.teamId && u.teamName).map((u) => [u.teamId, { id: u.teamId!, name: u.teamName! }])).values()]
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
+    [allUsers]
+  );
 
   const handleOpenReassign = (item: AuditQueueItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setReassignItem(item);
-    setNewAuditorId(item.assignedAuditorId || 'AUD-01');
+    setNewAuditorId(item.assignedAuditorId || auditorOptions[0]?.id || '');
     setReassignReason('');
   };
 
@@ -106,6 +123,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     setSelectedAuditor('ALL');
     setSelectedTag('ALL');
     setSelectedStatus('ALL');
+    setSelectedAuditDate('');
   };
 
   return (
@@ -115,9 +133,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-              Run: RUN-2026-1020 • v1.1
+              Run: {effectiveAuditDate ? `RUN-${effectiveAuditDate.replaceAll('-', '')}` : 'Chưa có run'} • v1.1
             </span>
-            <span className="text-xs text-slate-400">Snapshot 00:02:15</span>
+            <span className="text-xs text-slate-400">Snapshot theo ngày {effectiveAuditDate || '—'}</span>
           </div>
           <h1 className="text-base font-semibold text-slate-900 dark:text-white mt-1">
             Hàng chờ Audit Hằng ngày (Audit Queue)
@@ -134,7 +152,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
       {/* Minimal Filter Toolbar */}
       <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2.5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
           {/* Search box */}
           <div className="relative lg:col-span-1">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
@@ -147,6 +165,16 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             />
           </div>
 
+          {/* Filter audit date */}
+          <div>
+            <input
+              type="date"
+              value={effectiveAuditDate}
+              onChange={(e) => setSelectedAuditDate(e.target.value)}
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
+            />
+          </div>
+
           {/* Filter Team */}
           <div>
             <select
@@ -155,10 +183,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Team Sale</option>
-              <option value="TEAM-NORTH">Team B2B Miền Bắc</option>
-              <option value="TEAM-ENT">Team Enterprise</option>
-              <option value="TEAM-KEY">Team Key Account</option>
-              <option value="TEAM-SOUTH">Team B2B Miền Nam</option>
+              {teamOptions.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           </div>
 
@@ -170,9 +195,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               className="w-full text-xs px-2.5 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 dark:text-slate-100"
             >
               <option value="ALL">Tất cả Auditor</option>
-              <option value="AUD-01">Linh Nguyễn (AUD-01)</option>
-              <option value="AUD-02">Huy Trần (AUD-02)</option>
-              <option value="AUD-03">Trang Đỗ (AUD-03)</option>
+              {auditorOptions.map((auditor) => <option key={auditor.id} value={auditor.id}>{auditor.name} ({auditor.auditorId || auditor.id})</option>)}
               <option value="UNASSIGNED">Chưa phân công (UNASSIGNED)</option>
             </select>
           </div>
@@ -209,10 +232,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
           </div>
         </div>
 
-        {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL') && (
+        {(searchTerm || selectedTeam !== 'ALL' || selectedAuditor !== 'ALL' || selectedTag !== 'ALL' || selectedStatus !== 'ALL' || effectiveAuditDate) && (
           <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-              Đang lọc: Tìm thấy {filteredData.length} kết quả
+              Đang lọc: Tìm thấy {filteredData.length} kết quả {availableAuditDates.length > 0 && `(Ngày có sẵn: ${availableAuditDates.map((d) => d.split('-').reverse().join('/')).join(', ')})`}
             </span>
             <button
               onClick={resetFilters}
