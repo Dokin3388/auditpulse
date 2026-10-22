@@ -243,10 +243,10 @@ app.get('/api/queue', async (req: Request, res: Response) => {
           ELSE q.status
         END AS status,
         (
-          CASE WHEN c.first_seen_date::date = q.audit_date - 1
+          CASE WHEN c.first_seen_date::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
             THEN jsonb_build_array(jsonb_build_object(
-              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách mới hôm qua',
-              'description', 'Khách được ghi nhận vào ngày D-1.', 'detectedAt', q.audit_date::text
+              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách trong 2 ngày trước',
+              'description', 'Khách được ghi nhận trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
             )) ELSE '[]'::jsonb END
           || CASE WHEN NOT EXISTS (
             SELECT 1 FROM quotations qt
@@ -335,7 +335,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
               c.current_sale_id AS "saleId", u.name AS "saleName",
               c.current_team_id AS "teamId", t.name AS "teamName",
               ARRAY_REMOVE(ARRAY[
-                CASE WHEN c.first_seen_date::date = p.audit_date - 1 THEN 'YESTERDAY_CUSTOMERS' END,
+                CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1 THEN 'YESTERDAY_CUSTOMERS' END,
                 CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1
                        AND NOT EXISTS (
                          SELECT 1 FROM quotations q0
