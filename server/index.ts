@@ -4,7 +4,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { query, withTransaction, pool } from './db.ts';
 import {
   parseCsv,
@@ -124,6 +124,155 @@ app.get('/api/queue', async (req: Request, res: Response) => {
     res.json({ data: result.rows });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error retrieving queue items';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Promote source issue logs into one review queue item per unique customer/day.
+// This is deliberately separate from action creation: an auditor still has to
+// review the source finding before a corrective action exists.
+app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Response) => {
+  try {
+    const result = await withTransaction(async (client) => {
+      const [sourceRows, customers, sales, teams, assignments] = await Promise.all([
+        client.query<{ payload: Record<string, string> }>(
+          `SELECT payload FROM google_sheet_row_state
+           WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
+        ),
+        client.query<{ id: string; code: string; name: string; phone: string | null }>(
+          `SELECT id, code, name, phone FROM customers`
+        ),
+        client.query<{ id: string; name: string; saleCode: string }>(
+          `SELECT u.id, u.name, sp.sale_code AS "saleCode"
+           FROM app_users u JOIN sales_profiles sp ON sp.id = u.id
+           WHERE u.role = 'SALE'`
+        ),
+        client.query<{ id: string; code: string; name: string }>(
+          `SELECT id, code, name FROM teams`
+        ),
+        client.query<{ saleId: string; auditorId: string; effectiveFrom: string; effectiveTo: string | null; auditorName: string; auditorTeam: string | null }>(
+          `SELECT a.sale_id AS "saleId", a.auditor_id AS "auditorId",
+                  a.effective_from::text AS "effectiveFrom", a.effective_to::text AS "effectiveTo",
+                  u.name AS "auditorName", NULL::text AS "auditorTeam"
+           FROM auditor_assignments a JOIN app_users u ON u.id = a.auditor_id
+           WHERE a.is_active = true`
+        ),
+      ]);
+
+      const byCustomer = new Map<string, { id: string; name: string; phone: string | null }>();
+      for (const customer of customers.rows) {
+        for (const key of [customer.code, customer.phone, customer.name]) {
+          if (key?.trim()) byCustomer.set(key.trim().toLowerCase(), customer);
+        }
+      }
+      const bySale = new Map<string, { id: string; name: string; saleCode: string }>();
+      for (const sale of sales.rows) {
+        for (const key of [sale.name, sale.saleCode]) {
+          if (key?.trim()) bySale.set(key.trim().toLowerCase(), sale);
+        }
+      }
+      const byTeam = new Map<string, { id: string; code: string; name: string }>();
+      for (const team of teams.rows) {
+        for (const key of [team.code, team.name]) {
+          if (key?.trim()) byTeam.set(key.trim().toLowerCase(), team);
+        }
+      }
+
+      type Group = {
+        date: string;
+        customer: { id: string; name: string; phone: string | null };
+        sale: { id: string; name: string };
+        team: { id: string; name: string };
+        issueCodes: Set<string>;
+      };
+      const groups = new Map<string, Group>();
+      let skipped = 0;
+      for (const sourceRow of sourceRows.rows) {
+        const row = sourceRow.payload || {};
+        const date = String(row.date || '').trim().slice(0, 10);
+        const customerKey = String(row.sdt || row.ma_khach_hang || row.khach || '').trim().toLowerCase();
+        const saleKey = String(row.sale || row.sale_name || row.ten_sale || '').trim().toLowerCase();
+        const teamKey = String(row.team || row.team_name || '').trim().toLowerCase();
+        const customer = byCustomer.get(customerKey);
+        const sale = bySale.get(saleKey);
+        const team = byTeam.get(teamKey);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !customer || !sale || !team) {
+          skipped += 1;
+          continue;
+        }
+        const key = `${date}|${customer.id}`;
+        const group = groups.get(key) || {
+          date,
+          customer,
+          sale,
+          team,
+          issueCodes: new Set<string>(),
+        };
+        const issueCode = String(row.issue_code || row.ma_loi || '').trim();
+        if (issueCode) group.issueCodes.add(issueCode);
+        groups.set(key, group);
+      }
+
+      const runIds = new Set<string>();
+      let created = 0;
+      for (const group of groups.values()) {
+        const runId = `RUN-SHEET-${group.date.replaceAll('-', '')}`;
+        runIds.add(runId);
+        await client.query(
+          `INSERT INTO audit_queue_runs (id, run_date, rule_version, total_items, status)
+           VALUES ($1, $2, 'sheet-issue-v1', 0, 'COMPLETED')
+           ON CONFLICT (id) DO NOTHING`,
+          [runId, group.date]
+        );
+        const assignment = assignments.rows.find((item) => item.saleId === group.sale.id &&
+          item.effectiveFrom <= group.date && (!item.effectiveTo || item.effectiveTo >= group.date));
+        const queueId = `QUEUE-SHEET-${createHash('sha256').update(`${group.date}|${group.customer.id}`).digest('hex').slice(0, 24)}`;
+        const riskTags = JSON.stringify([...group.issueCodes].map((code) => ({ code, source: 'fact_issue_log' })));
+        const status = assignment ? 'ASSIGNED' : 'UNASSIGNED';
+        await client.query(
+          `INSERT INTO audit_queue_items (
+             id, queue_run_id, audit_date, customer_id, sale_id, team_id,
+             assigned_auditor_id, status, risk_tags, active_action_id, rule_version,
+             sync_timestamp, assigned_at, shared_work, snapshot_customer_name,
+             snapshot_sale_name, snapshot_team_name, snapshot_auditor_name
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'sheet-issue-v1', NOW(), $10, false, $11, $12, $13, $14)
+           ON CONFLICT (audit_date, customer_id) DO UPDATE SET
+             risk_tags = EXCLUDED.risk_tags,
+             assigned_auditor_id = COALESCE(audit_queue_items.assigned_auditor_id, EXCLUDED.assigned_auditor_id),
+             assigned_at = COALESCE(audit_queue_items.assigned_at, EXCLUDED.assigned_at),
+             status = CASE WHEN audit_queue_items.status IN ('COMPLETED_PASS', 'COMPLETED_FAIL', 'SKIPPED')
+                           THEN audit_queue_items.status ELSE EXCLUDED.status END,
+             snapshot_sale_name = EXCLUDED.snapshot_sale_name,
+             snapshot_team_name = EXCLUDED.snapshot_team_name,
+             snapshot_auditor_name = COALESCE(audit_queue_items.snapshot_auditor_name, EXCLUDED.snapshot_auditor_name),
+             sync_timestamp = NOW()`,
+          [
+            queueId,
+            runId,
+            group.date,
+            group.customer.id,
+            group.sale.id,
+            group.team.id,
+            assignment?.auditorId || null,
+            status,
+            riskTags,
+            assignment ? group.date : null,
+            group.customer.name,
+            group.sale.name,
+            group.team.name,
+            assignment?.auditorName || null,
+          ]
+        );
+        created += 1;
+      }
+      for (const runId of runIds) {
+        await client.query(`UPDATE audit_queue_runs SET total_items = (SELECT COUNT(*) FROM audit_queue_items WHERE queue_run_id = $1) WHERE id = $1`, [runId]);
+      }
+      return { sourceRows: sourceRows.rowCount ?? 0, queueItems: created, skipped, runCount: runIds.size };
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Không thể tạo audit queue từ nhật ký lỗi.';
     res.status(500).json({ error: message });
   }
 });
