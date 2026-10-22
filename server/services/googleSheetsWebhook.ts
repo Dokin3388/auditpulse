@@ -112,9 +112,8 @@ async function resolveOrCreateHistoricalSaleId(client: pg.PoolClient, saleNameOr
   const existingId = await resolveSaleId(client, saleNameOrCode);
   if (existingId) return existingId;
 
-  const name = text(saleNameOrCode);
-  if (!name) return null;
-  const fingerprint = createHash('sha256').update(name.toLowerCase()).digest('hex').slice(0, 32);
+  const name = text(saleNameOrCode) || 'Sale lịch sử chưa xác định';
+  const fingerprint = createHash('sha256').update((text(saleNameOrCode) || '__unknown__').toLowerCase()).digest('hex').slice(0, 32);
   const id = `SALE-LEGACY-${fingerprint}`;
   const code = `LEGACY-${fingerprint}`;
   await client.query(
