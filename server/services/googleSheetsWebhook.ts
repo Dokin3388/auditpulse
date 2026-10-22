@@ -32,6 +32,20 @@ function boundedText(value: unknown, maxLength: number): string {
   return text(value).slice(0, maxLength);
 }
 
+/**
+ * Keep source identifiers within the database VARCHAR(50) contract without
+ * collapsing different long values onto the same truncated key. The complete
+ * source value is still retained in google_sheet_row_state.payload.
+ */
+function boundedKey(value: unknown, maxLength = 50): string {
+  const normalized = text(value);
+  if (!normalized || normalized.length <= maxLength) return normalized;
+
+  const digest = createHash('sha256').update(normalized).digest('hex').slice(0, 12);
+  if (maxLength <= digest.length + 1) return digest.slice(0, maxLength);
+  return `${normalized.slice(0, maxLength - digest.length - 1)}-${digest}`;
+}
+
 export function normalizeGoogleSheetHeader(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim().toLowerCase().replace(/\s+/g, '_');
 }
@@ -92,8 +106,10 @@ export function googleSheetAmount(value: string): number {
 export function primaryGoogleSheetPhone(value: string): string | null {
   const normalized = text(value);
   if (!normalized) return null;
-  if (!/[\n,;]/.test(normalized)) return normalized;
-  return normalized.split(/[\n,;]+/).map(text).find(Boolean) ?? null;
+  const firstPhone = !/[\n,;]/.test(normalized)
+    ? normalized
+    : normalized.split(/[\n,;]+/).map(text).find(Boolean) ?? '';
+  return firstPhone ? boundedKey(firstPhone) : null;
 }
 
 function makePendingEmail(role: 'sale' | 'auditor', code: string): string {
@@ -170,11 +186,17 @@ async function resolveOrCreateHistoricalCustomerId(
   const existingId = await resolveCustomerId(client, lookup);
   if (existingId) return existingId;
 
+  const boundedLookup = boundedKey(lookup);
+  if (boundedLookup && boundedLookup !== lookup) {
+    const boundedExistingId = await resolveCustomerId(client, boundedLookup);
+    if (boundedExistingId) return boundedExistingId;
+  }
+
   const name = text(customerName) || 'Khách hàng lịch sử';
   const identity = lookup || `${name}|${primaryGoogleSheetPhone(phone) || ''}`;
   if (!identity) return null;
   const fingerprint = createHash('sha256').update(identity.toLowerCase()).digest('hex').slice(0, 24);
-  const code = lookup || `LEGACY-CUSTOMER-${fingerprint}`;
+  const code = boundedKey(lookup || `LEGACY-CUSTOMER-${fingerprint}`);
   await client.query(
     `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
      VALUES ($1, $2, $3, $4, NULL, 'HISTORICAL_TRANSACTION', $5, NULL, NULL)
@@ -240,8 +262,9 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
   }
 
   if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') {
-    const code = row.ma_khach_hang || row.so_dien_thoai;
-    if (!code || !row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
+    const sourceCode = row.ma_khach_hang || row.so_dien_thoai;
+    const code = boundedKey(sourceCode);
+    if (!sourceCode || !code || !row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
     const saleId = await resolveSaleId(client, row.nguoi_phu_trach);
     const teamId = await resolveTeamId(client, row.team);
     await client.query(
@@ -341,14 +364,13 @@ async function applyCustomerRows(
   // retain the latest row from this delivery for every customer identity.
   const rowsByCustomerCode = new Map<string, PendingGoogleSheetRow>();
   for (const pendingRow of rows) {
-    const code = pendingRow.row.ma_khach_hang || pendingRow.row.so_dien_thoai;
+    const code = boundedKey(pendingRow.row.ma_khach_hang || pendingRow.row.so_dien_thoai);
     if (!code || !pendingRow.row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
     rowsByCustomerCode.set(code, pendingRow);
   }
 
   const parameters: unknown[] = [];
-  const valueGroups = [...rowsByCustomerCode.values()].map(({ row }, index) => {
-    const code = row.ma_khach_hang || row.so_dien_thoai;
+  const valueGroups = [...rowsByCustomerCode.entries()].map(([code, { row }], index) => {
     const base = index * 7;
     parameters.push(
       code,
