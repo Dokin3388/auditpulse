@@ -6,6 +6,7 @@ import type {
   RiskTag,
   RiskTagCode,
   UserProfile,
+  IssueDefinition,
 } from '../types';
 
 export interface GoogleSheetSyncRun {
@@ -30,6 +31,10 @@ export interface SourceIssueLog {
 
 export async function getAppUsers(): Promise<UserProfile[]> {
   return getList<UserProfile>('/api/users');
+}
+
+export async function getIssueDefinitions(): Promise<IssueDefinition[]> {
+  return getList<IssueDefinition>('/api/issue-definitions');
 }
 
 export async function createAssignment(input: {
@@ -175,3 +180,4 @@ export async function getSourceIssueLogs(limit = 100): Promise<{ data: SourceIss
   if (!response.ok) throw new Error('Không thể tải nhật ký lỗi Sale từ Neon.');
   return (await response.json()) as { data: SourceIssueLog[]; total: number };
 }
+
