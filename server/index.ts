@@ -276,7 +276,9 @@ app.get('/api/queue', async (req: Request, res: Response) => {
       FROM audit_queue_items q
       JOIN customers c ON c.id = q.customer_id
       ${whereClause}
-      ORDER BY q.created_at ASC;
+      -- Newest audit days are the operational worklist; history remains
+      -- available through the explicit date filter.
+      ORDER BY q.audit_date DESC, q.created_at ASC;
     `;
 
     const result = await query(sql, values);

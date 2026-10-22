@@ -216,7 +216,10 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     void Promise.allSettled([
       getAppUsers(),
       getIssueDefinitions(),
-      materializeAuditQueue().then(() => getAuditQueue()),
+      // A refresh failure must not hide the queue already stored in Neon.
+      materializeAuditQueue()
+        .catch(() => undefined)
+        .then(() => getAuditQueue()),
       getCorrectiveActions(),
       getAuditorAssignments(),
       getRescuedOrders(),
