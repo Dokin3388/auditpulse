@@ -65,7 +65,7 @@ export function googleSheetSourceRowKey(sheetName: string, row: Record<string, s
   if (sheet === 'data_team_sale') return pick('id_team');
   if (sheet === 'data_sale') return pick('id_sale');
   if (sheet === 'trang_tinh1') return pick('ten_auditor');
-  if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') return pick('ma_khach_hang', 'so_dien_thoai');
+  if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') return pick('ma_khach_hang', 'so_dien_thoai') || `${sheet}:${fallbackIndex}`;
   if (sheet === 'misa_bao_gia_ggs') return pick('so_bao_gia');
   if (sheet === 'misa_don_hang_ggs') return pick('so_chung_tu');
   if (sheet === 'dim_issue') return pick('issue_code');
@@ -264,7 +264,7 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
   if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') {
     const sourceCode = row.ma_khach_hang || row.so_dien_thoai;
     const code = boundedKey(sourceCode);
-    if (!sourceCode || !code || !row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
+    if (!sourceCode || !code || !row.ten_kh) return false;
     const saleId = await resolveSaleId(client, row.nguoi_phu_trach);
     const teamId = await resolveTeamId(client, row.team);
     await client.query(
@@ -343,7 +343,13 @@ type PendingGoogleSheetRow = {
 async function applyCustomerRows(
   client: pg.PoolClient,
   rows: PendingGoogleSheetRow[]
-): Promise<void> {
+): Promise<boolean[]> {
+  const validRows = rows.filter(({ row }) => {
+    const sourceCode = row.ma_khach_hang || row.so_dien_thoai;
+    return Boolean(sourceCode && boundedKey(sourceCode) && row.ten_kh);
+  });
+  if (validRows.length === 0) return rows.map(() => false);
+
   const [sales, teams] = await Promise.all([
     client.query(`SELECT sp.id, sp.sale_code, u.name FROM sales_profiles sp JOIN app_users u ON u.id = sp.id`),
     client.query(`SELECT id, code, name FROM teams`),
@@ -363,9 +369,8 @@ async function applyCustomerRows(
   // INSERT ... ON CONFLICT statement may update each target at most once, so
   // retain the latest row from this delivery for every customer identity.
   const rowsByCustomerCode = new Map<string, PendingGoogleSheetRow>();
-  for (const pendingRow of rows) {
+  for (const pendingRow of validRows) {
     const code = boundedKey(pendingRow.row.ma_khach_hang || pendingRow.row.so_dien_thoai);
-    if (!code || !pendingRow.row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
     rowsByCustomerCode.set(code, pendingRow);
   }
 
@@ -392,6 +397,9 @@ async function applyCustomerRows(
        current_sale_id = EXCLUDED.current_sale_id, current_team_id = EXCLUDED.current_team_id`,
     parameters
   );
+
+  const validSet = new Set(validRows);
+  return rows.map((pendingRow) => validSet.has(pendingRow));
 }
 
 async function applyOperationalRows(
@@ -405,8 +413,7 @@ async function applyOperationalRows(
 
   const normalizedSheetName = normalizeGoogleSheetHeader(sheetName);
   if (normalizedSheetName === 'data_customers' || normalizedSheetName === 'tonghopkhachhang') {
-    await applyCustomerRows(client, rows);
-    return rows.map(() => true);
+    return applyCustomerRows(client, rows);
   }
   const handled: boolean[] = [];
   for (const { row } of rows) handled.push(await applyOperationalRow(client, sheetName, row));
