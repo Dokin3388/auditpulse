@@ -316,10 +316,15 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
         ),
       ]);
 
+      const normalizeLookupKey = (value: string) => {
+        const trimmed = value.trim().toLowerCase();
+        if (/^\d+$/.test(trimmed)) return trimmed.replace(/^0+/, '') || '0';
+        return trimmed.replace(/\s+/g, ' ');
+      };
       const byCustomer = new Map<string, { id: string; name: string; phone: string | null }>();
       for (const customer of customers.rows) {
         for (const key of [customer.code, customer.phone, customer.name]) {
-          if (key?.trim()) byCustomer.set(key.trim().toLowerCase(), customer);
+          if (key?.trim()) byCustomer.set(normalizeLookupKey(key), customer);
         }
       }
       const bySale = new Map<string, { id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>();
@@ -340,7 +345,7 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
       for (const sourceRow of sourceRows.rows) {
         const row = sourceRow.payload || {};
         const date = String(row.date || '').trim().slice(0, 10);
-        const customerKey = String(row.sdt || row.ma_khach_hang || row.khach || '').trim().toLowerCase();
+        const customerKey = normalizeLookupKey(String(row.sdt || row.ma_khach_hang || row.khach || ''));
         const saleKey = String(row.sale || row.sale_name || row.ten_sale || '').trim().toLowerCase();
         const customer = byCustomer.get(customerKey);
         const sale = bySale.get(saleKey);
