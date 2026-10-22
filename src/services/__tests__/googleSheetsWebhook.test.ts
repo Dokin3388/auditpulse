@@ -17,6 +17,7 @@ test('Google Sheets webhook: normalizes Vietnamese headers and row cells', () =>
 
 test('Google Sheets webhook: derives stable deduplication keys', () => {
   assert.equal(googleSheetSourceRowKey('data_sale', { id_sale: 'S-01' }, 7), 'S-01');
+  assert.equal(googleSheetSourceRowKey('TongHopKhachHang', { so_dien_thoai: '0901' }, 7), '0901');
   assert.equal(googleSheetSourceRowKey('fact_issue_log', { date: '2026-10-20', sale: 'S-01', sdt: '0901', issue_code: 'I-01', legacy_code: '' }, 7), '2026-10-20|S-01|0901|I-01|');
   assert.equal(googleSheetSourceRowKey('unknown', {}, 7), 'unknown:7');
 });

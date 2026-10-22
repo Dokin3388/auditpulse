@@ -44,7 +44,7 @@ export function googleSheetSourceRowKey(sheetName: string, row: Record<string, s
   if (sheet === 'data_team_sale') return pick('id_team');
   if (sheet === 'data_sale') return pick('id_sale');
   if (sheet === 'trang_tinh1') return pick('ten_auditor');
-  if (sheet === 'data_customers') return pick('ma_khach_hang', 'so_dien_thoai');
+  if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') return pick('ma_khach_hang', 'so_dien_thoai');
   if (sheet === 'misa_bao_gia_ggs') return pick('so_bao_gia');
   if (sheet === 'misa_don_hang_ggs') return pick('so_chung_tu');
   if (sheet === 'dim_issue') return pick('issue_code');
@@ -232,7 +232,7 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
     return true;
   }
 
-  if (sheet === 'data_customers') {
+  if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') {
     const code = row.ma_khach_hang || row.so_dien_thoai;
     if (!code || !row.ten_kh) throw new Error('Khách hàng thiếu Mã khách hàng/Số điện thoại hoặc Tên KH.');
     const saleId = await resolveSaleId(client, row.nguoi_phu_trach);
@@ -374,7 +374,8 @@ async function applyOperationalRows(
   // row-state table. Do not generate an empty INSERT ... VALUES ON CONFLICT.
   if (rows.length === 0) return [];
 
-  if (normalizeGoogleSheetHeader(sheetName) === 'data_customers') {
+  const normalizedSheetName = normalizeGoogleSheetHeader(sheetName);
+  if (normalizedSheetName === 'data_customers' || normalizedSheetName === 'tonghopkhachhang') {
     await applyCustomerRows(client, rows);
     return rows.map(() => true);
   }
