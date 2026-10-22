@@ -72,7 +72,9 @@ export const AuditorAssignmentView: React.FC = () => {
   };
 
   const toggleVisibleSales = () => {
-    const visibleIds = sales.flatMap((sale) => (sale.saleId ? [sale.saleId] : []));
+    // The assignment API references app_users.id (e.g. SALE-S20), not the
+    // human-facing sale code (e.g. S20).
+    const visibleIds = sales.map((sale) => sale.id);
     const allVisibleSelected = visibleIds.every((id) => selectedSaleIds.includes(id));
     setSelectedSaleIds((previous) =>
       allVisibleSelected
@@ -95,7 +97,7 @@ export const AuditorAssignmentView: React.FC = () => {
     if (result.success) setSelectedSaleIds([]);
   };
 
-  const visibleIds = sales.flatMap((sale) => (sale.saleId ? [sale.saleId] : []));
+  const visibleIds = sales.map((sale) => sale.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedSaleIds.includes(id));
 
   return (
