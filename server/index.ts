@@ -213,7 +213,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
     }
     if (auditorId) {
       values.push(auditorId);
-      conditions.push(`q.assigned_auditor_id = $${values.length}`);
+      conditions.push(`COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) = $${values.length}`);
     }
     if (saleId) {
       values.push(saleId);
@@ -235,10 +235,13 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         q.snapshot_sale_name AS "saleName",
         q.team_id AS "teamId",
         q.snapshot_team_name AS "teamName",
-        q.assigned_auditor_id AS "assignedAuditorId",
-        q.snapshot_auditor_name AS "assignedAuditorName",
+        COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) AS "assignedAuditorId",
+        COALESCE(q.snapshot_auditor_name, effective_assignment.auditor_name) AS "assignedAuditorName",
         q.assigned_at AS "assignedAt",
-        q.status,
+        CASE
+          WHEN q.status = 'UNASSIGNED' AND effective_assignment.auditor_id IS NOT NULL THEN 'ASSIGNED'
+          ELSE q.status
+        END AS status,
         (
           CASE WHEN c.first_seen_date::date = q.audit_date - 1
             THEN jsonb_build_array(jsonb_build_object(
@@ -275,6 +278,15 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         q.shared_work AS "sharedWork"
       FROM audit_queue_items q
       JOIN customers c ON c.id = q.customer_id
+      LEFT JOIN LATERAL (
+        SELECT a.auditor_id, a.snapshot_auditor_name AS auditor_name
+        FROM auditor_assignments a
+        WHERE a.sale_id = q.sale_id
+          AND a.effective_from <= q.audit_date
+          AND (a.effective_to IS NULL OR a.effective_to >= q.audit_date)
+        ORDER BY a.effective_from DESC
+        LIMIT 1
+      ) effective_assignment ON true
       ${whereClause}
       -- Newest audit days are the operational worklist; history remains
       -- available through the explicit date filter.

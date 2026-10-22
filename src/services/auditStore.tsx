@@ -47,6 +47,8 @@ import {
   getCorrectiveActions,
   createAssignment,
   getRescuedOrders,
+  startActionRecheck,
+  submitActionRecheck,
 } from './api';
 
 export interface AuditStoreContextType {
@@ -407,6 +409,10 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       prev.map((act) => (act.id === actionId ? { ...act, status: 'IN_RECHECK' } : act))
     );
 
+    // Persist the Auditor's decision server-side; local state updates immediately
+    // so the worklist stays responsive while the request completes.
+    void startActionRecheck(actionId).catch(() => undefined);
+
     addTrailEvent(
       'RECHECK_STARTED',
       `Auditor ${currentUser.name} bắt đầu kiểm tra (IN_RECHECK) action ${action.code}.`
@@ -467,6 +473,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
         })
       );
 
+      void submitActionRecheck({ actionId, result, notes }).catch(() => undefined);
+
       addTrailEvent(
         'RECHECK_IMPROVED',
         `Auditor ${currentUser.name} xác nhận IMPROVED. Action ${action.code} chính thức được ĐÓNG (VERIFIED_CLOSED).`,
@@ -493,6 +501,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
           };
         })
       );
+
+      void submitActionRecheck({ actionId, result, notes, nextDueDate }).catch(() => undefined);
 
       addTrailEvent(
         'RECHECK_NOT_IMPROVED',
@@ -556,7 +566,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có quyền điều chỉnh phân công Auditor.' };
     }
 
-    const sale = allUsers.find((u) => u.saleId === saleId);
+    const sale = allUsers.find((u) => u.id === saleId || u.saleId === saleId);
     const auditor = allUsers.find((u) => u.auditorId === auditorId);
     const saleName = sale ? sale.name : 'Sale ' + saleId;
     const auditorName = auditor ? auditor.name : 'Auditor ' + auditorId;
@@ -628,7 +638,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
     let plannedAssignments = auditorAssignments;
     for (const saleId of uniqueSaleIds) {
-      const sale = allUsers.find((user) => user.saleId === saleId);
+      const sale = allUsers.find((user) => user.id === saleId || user.saleId === saleId);
       if (!sale) {
         return { success: false, message: `Không tìm thấy sale ${saleId}; không có thay đổi nào được lưu.` };
       }

@@ -48,7 +48,8 @@ export function canSaleMarkActionDone(
  * Validates whether an Auditor can start recheck.
  * Invariants:
  * - Only the assigned auditor can start recheck.
- * - Allowed ONLY when action is in SALE_MARKED_DONE.
+ * - Allowed when action is OPEN, REOPENED, or SALE_MARKED_DONE.
+ * - Sale confirmation is optional evidence; the Auditor owns the final verdict.
  */
 export function canAuditorStartRecheck(
   action: Pick<CorrectiveAction, 'status' | 'auditorId' | 'auditorName'>,
@@ -61,10 +62,10 @@ export function canAuditorStartRecheck(
     };
   }
 
-  if (action.status !== 'SALE_MARKED_DONE') {
+  if (!['OPEN', 'REOPENED', 'SALE_MARKED_DONE'].includes(action.status)) {
     return {
       valid: false,
-      error: `Chuyển trạng thái không hợp lệ: Chỉ có thể bắt đầu recheck khi action ở trạng thái SALE_MARKED_DONE (hiện tại: ${action.status}).`,
+      error: `Chuyển trạng thái không hợp lệ: Auditor chỉ có thể bắt đầu kiểm tra khi action ở OPEN, REOPENED hoặc SALE_MARKED_DONE (hiện tại: ${action.status}).`,
     };
   }
 

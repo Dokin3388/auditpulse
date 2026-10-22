@@ -58,7 +58,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   );
 
   // Start on the newest available audit day
-  const effectiveAuditDate = selectedAuditDate || availableAuditDates[0] || '';
+  const effectiveAuditDate = selectedAuditDate === '__ALL__' ? '' : selectedAuditDate || availableAuditDates[0] || '';
 
   // Items scoped to the selected audit date
   const dateScopedItems = useMemo(() => {
@@ -305,7 +305,13 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             </label>
             <select
               value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
+              onChange={(e) => {
+                const nextTag = e.target.value;
+                setSelectedTag(nextTag);
+                if (nextTag !== 'ALL') {
+                  setSelectedAuditDate('__ALL__');
+                }
+              }}
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
               <option value="ALL">Tất cả cảnh báo</option>
