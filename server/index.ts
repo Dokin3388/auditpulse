@@ -355,8 +355,25 @@ app.post('/api/queue/materialize-from-issue-logs', async (_req: Request, res: Re
                        ) THEN 'QUOTED_NOT_ORDERED' END
               ]::text[], NULL) AS "ruleCodes"
             FROM customers c
-            JOIN app_users u ON u.id = c.current_sale_id AND u.role = 'SALE'
-            JOIN teams t ON t.id = c.current_team_id
+            LEFT JOIN LATERAL (
+              SELECT q.sale_id
+              FROM quotations q
+              WHERE q.customer_id = c.id
+              ORDER BY q.quote_date DESC
+              LIMIT 1
+            ) latest_quote_owner ON true
+            LEFT JOIN LATERAL (
+              SELECT so.sale_id
+              FROM sales_orders so
+              WHERE so.customer_id = c.id
+              ORDER BY so.order_date DESC
+              LIMIT 1
+            ) latest_order_owner ON true
+            JOIN app_users u
+              ON u.id = COALESCE(c.current_sale_id, latest_quote_owner.sale_id, latest_order_owner.sale_id)
+             AND u.role = 'SALE'
+            JOIN sales_profiles sp ON sp.id = u.id
+            JOIN teams t ON t.id = COALESCE(c.current_team_id, sp.team_id)
             CROSS JOIN p
           )
           SELECT * FROM candidates WHERE cardinality("ruleCodes") > 0
