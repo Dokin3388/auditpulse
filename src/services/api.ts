@@ -37,6 +37,19 @@ export async function getIssueDefinitions(): Promise<IssueDefinition[]> {
   return getList<IssueDefinition>('/api/issue-definitions');
 }
 
+export async function materializeAuditQueue(): Promise<void> {
+  const response = await fetch('/api/queue/materialize-from-issue-logs', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || 'Không thể cập nhật Audit Queue từ nhật ký lỗi.');
+  }
+}
+
 export async function createAssignment(input: {
   saleId: string;
   auditorId: string;
