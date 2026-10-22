@@ -538,25 +538,17 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                     Lý do: {activeAction.waiveReason || 'Head Auditor phê duyệt miễn trừ.'}
                   </p>
                 </div>
-              ) : activeAction.status === 'OPEN' || activeAction.status === 'REOPENED' ? (
-                <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 space-y-1 text-center">
-                  <Clock className="w-6 h-6 text-slate-400 mx-auto" />
-                  <h4 className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
-                    Chờ Sale khắc phục ({activeAction.status})
-                  </h4>
-                  <p className="text-[11px]">
-                    Auditor chỉ có thể bắt đầu recheck sau khi Sale đã tick "Tôi đã thực hiện" (trạng thái SALE_MARKED_DONE).
-                  </p>
-                </div>
-              ) : activeAction.status === 'SALE_MARKED_DONE' ? (
+              ) : activeAction.status === 'OPEN' || activeAction.status === 'REOPENED' || activeAction.status === 'SALE_MARKED_DONE' ? (
                 <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 rounded-md border border-amber-200 dark:border-amber-800 space-y-2.5">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                     <div>
                       <h4 className="font-semibold text-amber-950 dark:text-amber-200 text-xs">
-                        Sale đã nộp xác nhận khắc phục (SALE_MARKED_DONE)
+                        {activeAction.status === 'SALE_MARKED_DONE'
+                          ? 'Sale đã gửi xác nhận, chờ Auditor nghiệm thu'
+                          : `Auditor có thể kiểm tra ngay (${activeAction.status})`}
                       </h4>
                       <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                        Bấm "Bắt đầu Recheck" để chuyển trạng thái sang IN_RECHECK và mở biểu mẫu đánh giá.
+                        Auditor là người quyết định cuối cùng Sale đã sửa lỗi hay chưa. Xác nhận của Sale chỉ là bằng chứng tham khảo.
                       </p>
                     </div>
                     <button
@@ -564,7 +556,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       disabled={!isAssignedAuditor}
                       className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-medium rounded-md text-xs transition-colors disabled:opacity-40 shrink-0"
                     >
-                      Bắt đầu Recheck
+                      Bắt đầu kiểm tra
                     </button>
                   </div>
                 </div>
@@ -573,7 +565,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                 <div className="space-y-3 text-xs">
                   <div className="p-2 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-medium flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
                     <Clock className="w-3.5 h-3.5 shrink-0 text-slate-500" />
-                    <span>Action đang trong phiên kiểm tra (IN_RECHECK). Vui lòng đưa ra kết luận:</span>
+                    <span>Action đang trong phiên kiểm tra. Auditor hãy kết luận Sale đã sửa lỗi hay chưa:</span>
                   </div>
 
                   {/* Verdict Selection: IMPROVED vs NOT_IMPROVED */}
@@ -594,7 +586,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       >
                         <div className="flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Cải thiện (IMPROVED)</span>
+                          <span>Sale đã sửa lỗi</span>
                         </div>
                         <p className="text-[10px] text-slate-400 font-normal mt-0.5">
                           Đóng action (VERIFIED_CLOSED)
@@ -613,7 +605,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
                       >
                         <div className="flex items-center gap-1.5">
                           <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                          <span>Chưa đạt (NOT_IMPROVED)</span>
+                          <span>Sale chưa sửa lỗi</span>
                         </div>
                         <p className="text-[10px] text-slate-400 font-normal mt-0.5">
                           Mở lại action (REOPENED)

@@ -7,6 +7,7 @@ import type {
   RiskTagCode,
   UserProfile,
   IssueDefinition,
+  RecheckResult,
 } from '../types';
 
 export interface GoogleSheetSyncRun {
@@ -157,6 +158,37 @@ export async function getCorrectiveActions(): Promise<CorrectiveAction[]> {
     waiveApprovedBy: action.waiveApprovedBy,
     isOverdue: Boolean(action.isOverdue),
   }));
+}
+
+export async function startActionRecheck(actionId: string): Promise<void> {
+  const response = await fetch(`/api/actions/${encodeURIComponent(actionId)}/start-recheck`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || 'Không thể bắt đầu kiểm tra action.');
+  }
+}
+
+export async function submitActionRecheck(input: {
+  actionId: string;
+  result: RecheckResult;
+  notes: string;
+  nextDueDate?: string;
+}): Promise<void> {
+  const response = await fetch(`/api/actions/${encodeURIComponent(input.actionId)}/submit-recheck`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ result: input.result, notes: input.notes, nextDueDate: input.nextDueDate }),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || 'Không thể lưu kết luận của Auditor.');
+  }
 }
 
 export function getAuditorAssignments(): Promise<AuditorAssignment[]> {

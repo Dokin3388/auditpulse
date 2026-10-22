@@ -47,6 +47,8 @@ import {
   getCorrectiveActions,
   createAssignment,
   getRescuedOrders,
+  startActionRecheck,
+  submitActionRecheck,
 } from './api';
 
 export interface AuditStoreContextType {
@@ -407,6 +409,10 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       prev.map((act) => (act.id === actionId ? { ...act, status: 'IN_RECHECK' } : act))
     );
 
+    // Persist the Auditor's decision server-side; local state updates immediately
+    // so the worklist stays responsive while the request completes.
+    void startActionRecheck(actionId).catch(() => undefined);
+
     addTrailEvent(
       'RECHECK_STARTED',
       `Auditor ${currentUser.name} bắt đầu kiểm tra (IN_RECHECK) action ${action.code}.`
@@ -467,6 +473,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
         })
       );
 
+      void submitActionRecheck({ actionId, result, notes }).catch(() => undefined);
+
       addTrailEvent(
         'RECHECK_IMPROVED',
         `Auditor ${currentUser.name} xác nhận IMPROVED. Action ${action.code} chính thức được ĐÓNG (VERIFIED_CLOSED).`,
@@ -493,6 +501,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
           };
         })
       );
+
+      void submitActionRecheck({ actionId, result, notes, nextDueDate }).catch(() => undefined);
 
       addTrailEvent(
         'RECHECK_NOT_IMPROVED',

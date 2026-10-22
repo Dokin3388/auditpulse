@@ -61,7 +61,7 @@ test('Action Transition: saleMarkActionDone only allows OPEN or REOPENED for ass
   assert.equal(resAuditor.valid, false);
 });
 
-test('Action Transition: auditorStartRecheck only allows SALE_MARKED_DONE for assigned auditor', () => {
+test('Action Transition: assigned auditor can start recheck without a sale self-confirmation', () => {
   const baseAction = {
     auditorId: 'AUD-01',
     auditorName: 'Linh Nguyễn',
@@ -76,10 +76,12 @@ test('Action Transition: auditorStartRecheck only allows SALE_MARKED_DONE for as
     true
   );
 
-  // 2. Disallowed states
+  // 2. OPEN and REOPENED are also valid: Auditor owns the final verdict.
+  assert.equal(canAuditorStartRecheck({ ...baseAction, status: 'OPEN' }, assignedAuditor).valid, true);
+  assert.equal(canAuditorStartRecheck({ ...baseAction, status: 'REOPENED' }, assignedAuditor).valid, true);
+
+  // 3. Disallowed states
   const invalidStatuses: CorrectiveActionStatus[] = [
-    'OPEN',
-    'REOPENED',
     'IN_RECHECK',
     'VERIFIED_CLOSED',
     'WAIVED',
@@ -92,7 +94,7 @@ test('Action Transition: auditorStartRecheck only allows SALE_MARKED_DONE for as
     assert.match(res.error || '', /Chuyển trạng thái không hợp lệ/);
   }
 
-  // 3. Other auditor
+  // 4. Other auditor
   const resOther = canAuditorStartRecheck({ ...baseAction, status: 'SALE_MARKED_DONE' }, otherAuditor);
   assert.equal(resOther.valid, false);
   assert.match(resOther.error || '', /Từ chối quyền/);
