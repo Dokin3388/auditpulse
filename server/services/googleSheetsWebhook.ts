@@ -55,7 +55,19 @@ export function googleSheetSourceRowKey(sheetName: string, row: Record<string, s
 }
 
 function dateOrNow(value: string): string {
-  const parsed = Date.parse(value);
+  const raw = text(value);
+  // Vietnamese source sheets use DD/MM/YYYY (and sometimes DD-MM-YYYY).
+  // Date.parse is locale-dependent and silently turns 02/01/2026 into the
+  // wrong month on a US-runtime, so parse these dates explicitly first.
+  const vietnameseDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (vietnameseDate) {
+    const [, day, month, year, hour = '0', minute = '0', second = '0'] = vietnameseDate;
+    const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)));
+    if (parsed.getUTCFullYear() === Number(year) && parsed.getUTCMonth() === Number(month) - 1 && parsed.getUTCDate() === Number(day)) {
+      return parsed.toISOString();
+    }
+  }
+  const parsed = Date.parse(raw);
   return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
 }
 
@@ -156,11 +168,13 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
     const teamId = await resolveTeamId(client, row.id_team);
     if (!code || !row.full_name || !teamId) throw new Error('Sale thiếu mã/tên hoặc team chưa được đồng bộ.');
     const id = `SALE-${code}`;
+    const normalizedStatus = normalizeGoogleSheetHeader(row.status);
+    const inactiveStatuses = new Set(['inactive', 'dung_hoat_dong', 'nghi', 'ngung_hoat_dong', 'da_nghi', 'false', '0', 'no']);
     await client.query(
       `INSERT INTO app_users (id, email, name, role, is_active)
        VALUES ($1, $2, $3, 'SALE', $4)
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active`,
-      [id, makePendingEmail('sale', code), row.full_name, row.status.toLowerCase() !== 'inactive']
+      [id, makePendingEmail('sale', code), row.full_name, !inactiveStatuses.has(normalizedStatus)]
     );
     await client.query(
       `INSERT INTO sales_profiles (id, sale_code, team_id, phone) VALUES ($1, $2, $3, $4)
@@ -433,3 +447,4 @@ export async function syncGoogleSheetWebhook(
     throw error;
   }
 }
+
