@@ -29,6 +29,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const authHandler = toNodeHandler(auth);
 
 // CORS Middleware
 app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -58,7 +59,7 @@ const getAppUserByEmail = async (email: string) => {
   return result.rows[0] ?? null;
 };
 
-app.post('/api/auth/sign-in/email', async (req: Request, res: Response) => {
+app.post('/api/auth/sign-in/email', async (req: Request, res: Response, next: NextFunction) => {
   const payload = (req.body ?? {}) as { email?: string; password?: string; rememberMe?: boolean };
   const email = typeof payload.email === 'string' ? payload.email.trim() : '';
   const password = typeof payload.password === 'string' ? payload.password : '';
@@ -93,19 +94,10 @@ app.post('/api/auth/sign-in/email', async (req: Request, res: Response) => {
     return;
   }
 
-  try {
-    await auth.api.signInEmail({
-      body: { email, password, rememberMe: Boolean(payload.rememberMe) },
-      headers: fromNodeHeaders(req.headers),
-    });
-    res.json({ success: true });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Email hoặc mật khẩu không đúng.';
-    res.status(401).json({ message });
-  }
+  return authHandler(req, res, next);
 });
 
-app.post('/api/auth/sign-up/email', async (req: Request, res: Response) => {
+app.post('/api/auth/sign-up/email', async (req: Request, res: Response, next: NextFunction) => {
   const payload = (req.body ?? {}) as { name?: string; email?: string; password?: string };
   const name = typeof payload.name === 'string' ? payload.name.trim() : '';
   const email = typeof payload.email === 'string' ? payload.email.trim() : '';
@@ -130,20 +122,11 @@ app.post('/api/auth/sign-up/email', async (req: Request, res: Response) => {
     return;
   }
 
-  try {
-    await auth.api.signUpEmail({
-      body: { name, email, password },
-      headers: fromNodeHeaders(req.headers),
-    });
-    res.json({ success: true });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Không thể tạo tài khoản.';
-    res.status(400).json({ message });
-  }
+  return authHandler(req, res, next);
 });
 
 // Better Auth handles the remaining auth endpoints (session lookup, sign-out, etc.).
-app.all('/api/auth/*splat', toNodeHandler(auth));
+app.all('/api/auth/*splat', authHandler);
 
 type AppActor = { id: string; email: string; name: string; role: string; avatarUrl: string | null };
 
