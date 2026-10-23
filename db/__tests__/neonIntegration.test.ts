@@ -31,55 +31,57 @@ liveTest('Neon DB: Database connectivity and version verification', async () => 
 
 liveTest('Neon DB Invariant: Anti-Duplicate Action Constraint blocks duplicate active action on (customer_id, issue_code)', async () => {
   const client = await pool.connect();
-  try {
-    // There is already an active action for CUST-004 with issue DISC_001 (ACT-2026-0985 at REOPENED)
-    const duplicateAction = {
-      id: `TEST-DUP-${Date.now()}`,
-      code: `ACT-DUP-${Date.now()}`,
-      case_id: 'CASE-2026-0801',
-      customer_id: 'CUST-004',
-      issue_code: 'DISC_001',
-      issue_name: 'Áp dụng chiết khấu vượt khung',
-      sale_id: 'SALE-03',
-      auditor_id: 'AUD-02',
-      severity: 'HIGH',
-      status: 'OPEN', // Active status
-      due_date: '2026-10-25T18:00:00Z',
-      sla_rule_version: 'v1.4',
-      completion_criteria: 'Test criteria',
-      snapshot_customer_name: 'Test Customer',
-      snapshot_sale_name: 'Test Sale',
-      snapshot_team_name: 'Test Team',
-      snapshot_auditor_name: 'Test Auditor',
-    };
+  const suffix = `DUP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const teamId = `TEST-TEAM-${suffix}`;
+  const saleId = `TEST-SALE-${suffix}`;
+  const auditorId = `TEST-AUD-${suffix}`;
+  const customerId = `TEST-CUST-${suffix}`;
+  const issueCode = `ISSUE_${suffix}`;
+  const actionId1 = `TEST-ACT1-${suffix}`;
+  const actionId2 = `TEST-ACT2-${suffix}`;
 
+  try {
+    await client.query('BEGIN');
+
+    // 1. Self-contained minimum valid fixtures
+    await client.query(
+      `INSERT INTO teams (id, code, name) VALUES ($1, $1, 'Test Team')`,
+      [teamId]
+    );
+    await client.query(
+      `INSERT INTO app_users (id, email, name, role) VALUES ($1, $2, 'Test Sale', 'SALE')`,
+      [saleId, `sale.${suffix}@auditpulse.test`]
+    );
+    await client.query(
+      `INSERT INTO app_users (id, email, name, role) VALUES ($1, $2, 'Test Auditor', 'AUDITOR')`,
+      [auditorId, `auditor.${suffix}@auditpulse.test`]
+    );
+    await client.query(
+      `INSERT INTO customers (id, code, name, first_seen_date, current_sale_id, current_team_id)
+       VALUES ($1, $1, 'Test Customer', NOW(), $2, $3)`,
+      [customerId, saleId, teamId]
+    );
+
+    // 2. Insert first active corrective action
+    await client.query(
+      `INSERT INTO corrective_actions (
+         id, code, customer_id, sale_id, auditor_id, issue_code, issue_name,
+         severity, status, due_date, sla_rule_version, completion_criteria,
+         snapshot_customer_name, snapshot_sale_name, snapshot_team_name, snapshot_auditor_name
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'Test Issue', 'HIGH', 'OPEN', NOW() + INTERVAL '3 days', 'v1.0', 'Test criteria', 'Test Customer', 'Test Sale', 'Test Team', 'Test Auditor')`,
+      [actionId1, `ACT1-${suffix}`, customerId, saleId, auditorId, issueCode]
+    );
+
+    // 3. Attempt inserting duplicate active action on same (customer_id, issue_code)
     let caughtError: any = null;
     try {
       await client.query(
         `INSERT INTO corrective_actions (
-           id, code, case_id, customer_id, issue_code, issue_name, sale_id, auditor_id,
+           id, code, customer_id, sale_id, auditor_id, issue_code, issue_name,
            severity, status, due_date, sla_rule_version, completion_criteria,
            snapshot_customer_name, snapshot_sale_name, snapshot_team_name, snapshot_auditor_name
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-        [
-          duplicateAction.id,
-          duplicateAction.code,
-          duplicateAction.case_id,
-          duplicateAction.customer_id,
-          duplicateAction.issue_code,
-          duplicateAction.issue_name,
-          duplicateAction.sale_id,
-          duplicateAction.auditor_id,
-          duplicateAction.severity,
-          duplicateAction.status,
-          duplicateAction.due_date,
-          duplicateAction.sla_rule_version,
-          duplicateAction.completion_criteria,
-          duplicateAction.snapshot_customer_name,
-          duplicateAction.snapshot_sale_name,
-          duplicateAction.snapshot_team_name,
-          duplicateAction.snapshot_auditor_name,
-        ]
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'Test Issue', 'HIGH', 'OPEN', NOW() + INTERVAL '3 days', 'v1.0', 'Test criteria', 'Test Customer', 'Test Sale', 'Test Team', 'Test Auditor')`,
+        [actionId2, `ACT2-${suffix}`, customerId, saleId, auditorId, issueCode]
       );
     } catch (err: any) {
       caughtError = err;
@@ -89,31 +91,59 @@ liveTest('Neon DB Invariant: Anti-Duplicate Action Constraint blocks duplicate a
     assert.equal(caughtError.code, '23505', 'PostgreSQL error code must be 23505 (unique_violation)');
     assert.ok(
       caughtError.constraint === 'idx_prevent_duplicate_active_action' ||
-        caughtError.message.includes('idx_prevent_duplicate_active_action')
+        caughtError.message.includes('idx_prevent_duplicate_active_action'),
+      'Must violate idx_prevent_duplicate_active_action constraint'
     );
   } finally {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors if transaction was already aborted
+    }
+    try {
+      await client.query(`DELETE FROM corrective_actions WHERE id IN ($1, $2)`, [actionId1, actionId2]);
+      await client.query(`DELETE FROM customers WHERE id = $1`, [customerId]);
+      await client.query(`DELETE FROM app_users WHERE id IN ($1, $2)`, [saleId, auditorId]);
+      await client.query(`DELETE FROM teams WHERE id = $1`, [teamId]);
+    } catch {
+      // ignore cleanup errors
+    }
     client.release();
   }
 });
 
 liveTest('Neon DB Invariant: Assignment Overlap Exclusion Constraint blocks 2 overlapping assignments for same sale', async () => {
   const client = await pool.connect();
-  try {
-    // SALE-02 has Assignment A from 2026-08-01 to 2026-10-26
-    // Attempting to insert an overlapping assignment for SALE-02 starting in that window (e.g. 2026-09-01 to 2026-10-01)
-    const overlappingAsg = {
-      id: `TEST-OVERLAP-${Date.now()}`,
-      sale_id: 'SALE-02',
-      auditor_id: 'AUD-02',
-      effective_from: '2026-09-01',
-      effective_to: '2026-10-01',
-      assignment_reason: 'Test overlap collision',
-      created_by: 'Head Auditor',
-      snapshot_sale_name: 'Lê Thu Hương',
-      snapshot_auditor_name: 'Trần Quang Huy',
-      snapshot_team_name: 'Team B2B Miền Bắc',
-    };
+  const suffix = `OVL-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const saleId = `TEST-SALE-${suffix}`;
+  const auditorId = `TEST-AUD-${suffix}`;
+  const asgId1 = `TEST-ASG1-${suffix}`;
+  const asgId2 = `TEST-ASG2-${suffix}`;
 
+  try {
+    await client.query('BEGIN');
+
+    // 1. Self-contained minimum valid fixtures
+    await client.query(
+      `INSERT INTO app_users (id, email, name, role) VALUES ($1, $2, 'Test Sale', 'SALE')`,
+      [saleId, `sale.${suffix}@auditpulse.test`]
+    );
+    await client.query(
+      `INSERT INTO app_users (id, email, name, role) VALUES ($1, $2, 'Test Auditor', 'AUDITOR')`,
+      [auditorId, `auditor.${suffix}@auditpulse.test`]
+    );
+
+    // 2. Insert initial assignment with date window (2026-08-01 to 2026-10-26)
+    await client.query(
+      `INSERT INTO auditor_assignments (
+         id, sale_id, auditor_id, effective_from, effective_to,
+         assignment_reason, created_by, is_active,
+         snapshot_sale_name, snapshot_auditor_name, snapshot_team_name
+       ) VALUES ($1, $2, $3, '2026-08-01', '2026-10-26', 'Initial assignment', 'Head Auditor', TRUE, 'Test Sale', 'Test Auditor', 'Test Team')`,
+      [asgId1, saleId, auditorId]
+    );
+
+    // 3. Attempt inserting overlapping assignment for same sale_id (2026-09-01 to 2026-10-01)
     let caughtError: any = null;
     try {
       await client.query(
@@ -121,19 +151,8 @@ liveTest('Neon DB Invariant: Assignment Overlap Exclusion Constraint blocks 2 ov
            id, sale_id, auditor_id, effective_from, effective_to,
            assignment_reason, created_by, is_active,
            snapshot_sale_name, snapshot_auditor_name, snapshot_team_name
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9, $10)`,
-        [
-          overlappingAsg.id,
-          overlappingAsg.sale_id,
-          overlappingAsg.auditor_id,
-          overlappingAsg.effective_from,
-          overlappingAsg.effective_to,
-          overlappingAsg.assignment_reason,
-          overlappingAsg.created_by,
-          overlappingAsg.snapshot_sale_name,
-          overlappingAsg.snapshot_auditor_name,
-          overlappingAsg.snapshot_team_name,
-        ]
+         ) VALUES ($1, $2, $3, '2026-09-01', '2026-10-01', 'Overlap assignment', 'Head Auditor', FALSE, 'Test Sale', 'Test Auditor', 'Test Team')`,
+        [asgId2, saleId, auditorId]
       );
     } catch (err: any) {
       caughtError = err;
@@ -143,24 +162,104 @@ liveTest('Neon DB Invariant: Assignment Overlap Exclusion Constraint blocks 2 ov
     assert.equal(caughtError.code, '23P01', 'PostgreSQL error code must be 23P01 (exclusion_violation)');
     assert.ok(
       caughtError.constraint === 'exclude_overlapping_auditor_assignments' ||
-        caughtError.message.includes('exclude_overlapping_auditor_assignments')
+        caughtError.message.includes('exclude_overlapping_auditor_assignments'),
+      'Must violate exclude_overlapping_auditor_assignments constraint'
     );
   } finally {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors if transaction was already aborted
+    }
+    try {
+      await client.query(`DELETE FROM auditor_assignments WHERE id IN ($1, $2)`, [asgId1, asgId2]);
+      await client.query(`DELETE FROM app_users WHERE id IN ($1, $2)`, [saleId, auditorId]);
+    } catch {
+      // ignore cleanup errors
+    }
     client.release();
   }
 });
 
 liveTest('Neon DB Reporting View: v_rescued_orders_attribution calculates valid rescued orders dynamically', async () => {
   const client = await pool.connect();
+  const suffix = `RSC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const teamId = `TEST-TEAM-${suffix}`;
+  const saleId = `TEST-SALE-${suffix}`;
+  const auditorId = `TEST-AUD-${suffix}`;
+  const customerId = `TEST-CUST-${suffix}`;
+  const actionId = `TEST-ACT-${suffix}`;
+  const orderId = `TEST-ORD-${suffix}`;
+
   try {
-    const res = await client.query('SELECT * FROM v_rescued_orders_attribution;');
+    await client.query('BEGIN');
+
+    // 1. Self-contained minimum valid fixtures
+    await client.query(
+      `INSERT INTO teams (id, code, name) VALUES ($1, $1, 'Test Team')`,
+      [teamId]
+    );
+    await client.query(
+      `INSERT INTO app_users (id, email, name, role) VALUES ($1, $2, 'Test Sale', 'SALE')`,
+      [saleId, `sale.${suffix}@auditpulse.test`]
+    );
+    await client.query(
+      `INSERT INTO app_users (id, email, name, role) VALUES ($1, $2, 'Test Auditor', 'AUDITOR')`,
+      [auditorId, `auditor.${suffix}@auditpulse.test`]
+    );
+    await client.query(
+      `INSERT INTO customers (id, code, name, first_seen_date, current_sale_id, current_team_id)
+       VALUES ($1, $1, 'Test Customer', NOW(), $2, $3)`,
+      [customerId, saleId, teamId]
+    );
+
+    // 2. Insert corrective action created 5 days ago
+    await client.query(
+      `INSERT INTO corrective_actions (
+         id, code, customer_id, sale_id, auditor_id, issue_code, issue_name,
+         severity, status, due_date, sla_rule_version, completion_criteria,
+         snapshot_customer_name, snapshot_sale_name, snapshot_team_name, snapshot_auditor_name,
+         created_at
+       ) VALUES ($1, $2, $3, $4, $5, 'ISSUE_TEST', 'Test Issue', 'HIGH', 'VERIFIED_CLOSED', NOW() + INTERVAL '2 days', 'v1.0', 'Criteria', 'Test Customer', 'Test Sale', 'Test Team', 'Test Auditor', NOW() - INTERVAL '5 days')`,
+      [actionId, `ACT-${suffix}`, customerId, saleId, auditorId]
+    );
+
+    // 3. Insert valid sales order placed 2 days ago (3 days after action created_at)
+    await client.query(
+      `INSERT INTO sales_orders (
+         id, code, customer_id, sale_id, order_date, total_amount, status
+       ) VALUES ($1, $2, $3, $4, NOW() - INTERVAL '2 days', 5000000, 'VALID')`,
+      [orderId, `ORD-${suffix}`, customerId, saleId]
+    );
+
+    // 4. Query rescued orders view filtered to the fixture customer
+    const res = await client.query(
+      `SELECT * FROM v_rescued_orders_attribution WHERE customer_id = $1;`,
+      [customerId]
+    );
+
     assert.ok(res.rows.length >= 1, 'View must return rescued orders');
-    const first = res.rows[0];
-    assert.ok(first.order_id);
-    assert.ok(first.order_value > 0);
-    assert.ok(first.window_days >= 0 && first.window_days <= 30);
-    assert.ok(['AUDIT_ASSISTED', 'SALE_SELF_RESOLVED'].includes(first.attribution_status));
+    const matched = res.rows.find((r: any) => r.order_id === orderId) || res.rows[0];
+    assert.equal(matched.order_id, orderId);
+    assert.equal(matched.customer_id, customerId);
+    assert.ok(Number(matched.order_value) > 0);
+    assert.ok(Number(matched.window_days) >= 0 && Number(matched.window_days) <= 30);
+    assert.ok(['AUDIT_ASSISTED', 'SALE_SELF_RESOLVED'].includes(matched.attribution_status));
   } finally {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors if transaction was already aborted
+    }
+    try {
+      await client.query(`DELETE FROM sales_orders WHERE id = $1`, [orderId]);
+      await client.query(`DELETE FROM corrective_actions WHERE id = $1`, [actionId]);
+      await client.query(`DELETE FROM customers WHERE id = $1`, [customerId]);
+      await client.query(`DELETE FROM app_users WHERE id IN ($1, $2)`, [saleId, auditorId]);
+      await client.query(`DELETE FROM teams WHERE id = $1`, [teamId]);
+    } catch {
+      // ignore cleanup errors
+    }
     client.release();
     await pool.end();
   }
