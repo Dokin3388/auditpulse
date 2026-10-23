@@ -111,6 +111,8 @@ async function runRollback() {
           DROP TABLE IF EXISTS google_sheet_row_state CASCADE;
           DROP TABLE IF EXISTS google_sheet_sync_runs CASCADE;
         `);
+      } else if (latestVersion === '0006_sale_login_policy.sql') {
+        await client.query('ALTER TABLE app_users DROP COLUMN IF EXISTS login_enabled;');
       } else if (latestVersion === '0003_data_onboarding_and_sla_tables.sql') {
         await client.query(`
           DROP TABLE IF EXISTS data_import_batches CASCADE;

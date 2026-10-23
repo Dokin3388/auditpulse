@@ -23,6 +23,7 @@ import {
 import type { RecheckResult, CorrectiveActionStatus } from '../src/types/index.ts';
 import { auth } from './auth.ts';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
+import { getLoginGateFailure, isLoginAllowedRole } from '../src/services/authPolicy.ts';
 
 dotenv.config();
 
@@ -42,21 +43,123 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Better Auth must receive the raw request before express.json parses it.
-app.all('/api/auth/*splat', toNodeHandler(auth));
 app.use(express.json());
+
+const getAppUserByEmail = async (email: string) => {
+  const result = await query(
+    `SELECT id, email, name, role, avatar_url AS "avatarUrl",
+            login_enabled AS "loginEnabled",
+            is_active AS "isActive"
+     FROM app_users
+     WHERE lower(email) = lower($1)`,
+    [email]
+  );
+
+  return result.rows[0] ?? null;
+};
+
+app.post('/api/auth/sign-in/email', async (req: Request, res: Response) => {
+  const payload = (req.body ?? {}) as { email?: string; password?: string; rememberMe?: boolean };
+  const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+  const password = typeof payload.password === 'string' ? payload.password : '';
+
+  if (!email || !password) {
+    res.status(400).json({ message: 'Email và mật khẩu không được để trống.' });
+    return;
+  }
+
+  const appUser = await getAppUserByEmail(email);
+  const blockReason = getLoginGateFailure({
+    role: appUser?.role ?? null,
+    loginEnabled: appUser?.loginEnabled ?? null,
+    isActive: appUser?.isActive ?? null,
+  });
+
+  if (!appUser || blockReason) {
+    res.status(403).json({
+      message: blockReason || 'Tài khoản chưa được cấp quyền AuditPulse.',
+    });
+    return;
+  }
+
+  try {
+    await auth.api.signInEmail({
+      body: { email, password, rememberMe: Boolean(payload.rememberMe) },
+      headers: fromNodeHeaders(req.headers),
+    });
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Email hoặc mật khẩu không đúng.';
+    res.status(401).json({ message });
+  }
+});
+
+app.post('/api/auth/sign-up/email', async (req: Request, res: Response) => {
+  const payload = (req.body ?? {}) as { name?: string; email?: string; password?: string };
+  const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+  const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+  const password = typeof payload.password === 'string' ? payload.password : '';
+
+  if (!name || !email || !password) {
+    res.status(400).json({ message: 'Tên, email và mật khẩu là bắt buộc.' });
+    return;
+  }
+
+  const appUser = await getAppUserByEmail(email);
+  const blockReason = getLoginGateFailure({
+    role: appUser?.role ?? null,
+    loginEnabled: appUser?.loginEnabled ?? null,
+    isActive: appUser?.isActive ?? null,
+  });
+
+  if (!appUser || blockReason) {
+    res.status(403).json({
+      message: blockReason || 'Tài khoản chưa được cấp quyền AuditPulse.',
+    });
+    return;
+  }
+
+  try {
+    await auth.api.signUpEmail({
+      body: { name, email, password },
+      headers: fromNodeHeaders(req.headers),
+    });
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Không thể tạo tài khoản.';
+    res.status(400).json({ message });
+  }
+});
+
+// Better Auth handles the remaining auth endpoints (session lookup, sign-out, etc.).
+app.all('/api/auth/*splat', toNodeHandler(auth));
 
 type AppActor = { id: string; email: string; name: string; role: string; avatarUrl: string | null };
 
 const getAppActor = async (req: Request): Promise<AppActor | null> => {
   const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
   if (!session?.user?.email) return null;
-  const result = await query(
-    `SELECT id, email, name, role, avatar_url AS "avatarUrl"
-     FROM app_users WHERE lower(email) = lower($1) AND is_active = true`,
-    [session.user.email]
-  );
-  return (result.rows[0] as AppActor | undefined) ?? null;
+
+  const row = await getAppUserByEmail(session.user.email);
+  if (!row) return null;
+
+  const blockReason = getLoginGateFailure({
+    role: row.role,
+    loginEnabled: row.loginEnabled,
+    isActive: row.isActive,
+  });
+
+  if (blockReason) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    avatarUrl: row.avatarUrl,
+  } as AppActor;
 };
 
 const requireAppSession = async (req: Request, res: Response, next: NextFunction) => {
@@ -73,6 +176,15 @@ const requireAppSession = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+const requireAuditOperator = (req: Request, res: Response, next: NextFunction) => {
+  const actor = res.locals.actor as AppActor | undefined;
+  if (!actor || !isLoginAllowedRole(actor.role)) {
+    res.status(403).json({ error: 'Tài khoản này không có quyền thao tác AuditPulse.' });
+    return;
+  }
+  next();
+};
+
 app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
   const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
   res.json({
@@ -82,9 +194,13 @@ app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
   });
 });
 
-// All operational data routes require a real AuditPulse session.
-app.use(['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin', '/api/issue-definitions'], requireAppSession);
-app.use('/api/sync/google-sheets/issue-logs', requireAppSession);
+// All operational data routes require a real AuditPulse session and auditor-level permissions.
+app.use(
+  ['/api/queue', '/api/actions', '/api/assignments', '/api/reports', '/api/onboarding', '/api/users', '/api/admin', '/api/issue-definitions'],
+  requireAppSession,
+  requireAuditOperator
+);
+app.use('/api/sync/google-sheets/issue-logs', requireAppSession, requireAuditOperator);
 
 app.get('/api/users', async (req: Request, res: Response) => {
   try {
@@ -134,14 +250,30 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
   }
 
   const accounts = [
-    { id: 'AUDITOR-AUD-MAI-HOANG', email: 'auditor01@auditpulse.local' },
-    { id: 'AUDITOR-AUD-NGOC-NHI', email: 'auditor02@auditpulse.local' },
-    { id: 'AUDITOR-AUD-PHUONG-TINH', email: 'auditor03@auditpulse.local' },
+    { id: 'AUDITOR-AUD-MAI-HOANG', code: 'AUD-01', name: 'Mai Hoàng', email: 'auditor01@auditpulse.local' },
+    { id: 'AUDITOR-AUD-NGOC-NHI', code: 'AUD-02', name: 'Ngọc Nhi', email: 'auditor02@auditpulse.local' },
+    { id: 'AUDITOR-AUD-PHUONG-TINH', code: 'AUD-03', name: 'Phương Tình', email: 'auditor03@auditpulse.local' },
   ];
 
   try {
     const created: Array<{ id: string; name: string; email: string; password: string }> = [];
     for (const account of accounts) {
+      await query(
+        `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+         VALUES ($1, $2, $3, 'AUDITOR', TRUE, TRUE)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           role = 'AUDITOR',
+           is_active = TRUE,
+           login_enabled = TRUE`,
+        [account.id, account.email, account.name]
+      );
+      await query(
+        `INSERT INTO auditor_profiles (id, auditor_code, max_daily_capacity)
+         VALUES ($1, $2, 80)
+         ON CONFLICT (id) DO UPDATE SET auditor_code = EXCLUDED.auditor_code`,
+        [account.id, account.code]
+      );
       const userResult = await query<{ id: string; name: string; role: string }>(
         `SELECT id, name, role FROM app_users WHERE id = $1 AND role = 'AUDITOR' AND is_active = true`,
         [account.id]

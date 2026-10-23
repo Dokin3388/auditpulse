@@ -77,11 +77,12 @@ async function runSeed() {
     ];
 
     for (const u of allSeedUsers) {
+      const loginEnabled = u.role === 'HEAD_AUDITOR' || u.role === 'AUDITOR' || u.role === 'ADMIN';
       await client.query(
-        `INSERT INTO app_users (id, email, name, role, avatar_url, is_active)
-         VALUES ($1, $2, $3, $4, $5, TRUE)
-         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role`,
-        [u.id, u.email, u.name, u.role, u.avatarUrl]
+        `INSERT INTO app_users (id, email, name, role, avatar_url, is_active, login_enabled)
+         VALUES ($1, $2, $3, $4, $5, TRUE, $6)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, login_enabled = EXCLUDED.login_enabled`,
+        [u.id, u.email, u.name, u.role, u.avatarUrl, loginEnabled]
       );
 
       // Link sales profile

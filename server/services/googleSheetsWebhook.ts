@@ -140,9 +140,9 @@ async function resolveOrCreateHistoricalSaleId(client: pg.PoolClient, saleNameOr
   const id = `SALE-LEGACY-${fingerprint}`;
   const code = `LEGACY-${fingerprint}`;
   await client.query(
-    `INSERT INTO app_users (id, email, name, role, is_active)
-     VALUES ($1, $2, $3, 'SALE', false)
-     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+    `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+     VALUES ($1, $2, $3, 'SALE', false, false)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, login_enabled = false` ,
     [id, makePendingEmail('sale', code), name]
   );
   await client.query(
@@ -229,9 +229,9 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
     const normalizedStatus = normalizeGoogleSheetHeader(row.status);
     const inactiveStatuses = new Set(['inactive', 'dung_hoat_dong', 'nghi', 'ngung_hoat_dong', 'da_nghi', 'false', '0', 'no']);
     await client.query(
-      `INSERT INTO app_users (id, email, name, role, is_active)
-       VALUES ($1, $2, $3, 'SALE', $4)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active`,
+      `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+       VALUES ($1, $2, $3, 'SALE', $4, false)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active, login_enabled = false`,
       [id, makePendingEmail('sale', code), row.full_name, !inactiveStatuses.has(normalizedStatus)]
     );
     await client.query(
@@ -248,9 +248,9 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
     const code = `AUD-${name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/(^-|-$)/g, '').toUpperCase()}`;
     const id = `AUDITOR-${code}`;
     await client.query(
-      `INSERT INTO app_users (id, email, name, role, is_active)
-       VALUES ($1, $2, $3, 'AUDITOR', true)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+      `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+       VALUES ($1, $2, $3, 'AUDITOR', true, true)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, login_enabled = true`,
       [id, makePendingEmail('auditor', code), name]
     );
     await client.query(

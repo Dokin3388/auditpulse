@@ -1,6 +1,7 @@
 // AuditPulse Data Onboarding & Validation Engine
 // Phase 1.5 Compliant with Operating Specification v1.1
 import type pg from 'pg';
+import { createHash } from 'node:crypto';
 
 export type EntityType =
   | 'TEAMS'
@@ -40,6 +41,15 @@ export interface CommitResult {
   successRows: number;
   failedRows: number;
   auditEventId: string;
+}
+
+// Source systems can concatenate many phone values into an oversized code,
+// while the database identifier is VARCHAR(50). Keep a deterministic key so
+// customers, quotations, and orders continue to reference the same customer.
+function dbCustomerCode(sourceCode: string): string {
+  const code = sourceCode.trim();
+  if (code.length <= 50) return code;
+  return `CUST-HASH-${createHash('sha256').update(code).digest('hex').slice(0, 40)}`;
 }
 
 /**
@@ -446,7 +456,6 @@ async function validateAssignments(
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const rowNum = lineNumbers[i] ?? i + 2;
-    const saleCode = (r.sale_code || r.sale_id || '').trim();
     const auditorCode = (r.auditor_code || r.auditor_id || '').trim();
     const effectiveFrom = (r.effective_from || '').trim();
     const effectiveTo = (r.effective_to || '').trim() || null;
@@ -648,8 +657,18 @@ async function validateCustomers(
       errors.push({ rowNumber: rowNum, field: 'customer_name', error: 'Tên khách hàng không được để trống.', severity: 'ERROR' });
     }
 
-    if (!saleCode) {
-      errors.push({ rowNumber: rowNum, field: 'current_sale_code', error: 'Sale phụ trách hiện tại không được để trống.', severity: 'ERROR' });
+    // A customer may legitimately have no current owner in the CRM snapshot.
+    // Ownership can be resolved from the latest quotation/order, and the
+    // queue query already falls back to those sources. Do not invent a Sale
+    // just to satisfy the import shape; validate the code only when present.
+    if (saleCode && !/^S\d+$/i.test(saleCode)) {
+      errors.push({
+        rowNumber: rowNum,
+        field: 'current_sale_code',
+        error: `Mã sale hiện tại '${saleCode}' không đúng định dạng.`,
+        rawValue: saleCode,
+        severity: 'ERROR',
+      });
     }
   }
 }
@@ -668,16 +687,14 @@ async function validateQuotations(
     const rowNum = lineNumbers[i] ?? i + 2;
     const code = (r.quote_code || r.code || '').trim();
     const custCode = (r.customer_code || r.customer_id || '').trim();
-    const saleCode = (r.sale_code || r.sale_id || '').trim();
     const amount = Number(r.total_amount);
     const status = (r.status || '').trim().toUpperCase();
 
     if (!code) {
       errors.push({ rowNumber: rowNum, field: 'quote_code', error: 'Mã báo giá không được để trống.', severity: 'ERROR' });
     } else {
-      if (seenCodes.has(code)) {
-        errors.push({ rowNumber: rowNum, field: 'quote_code', error: `Mã báo giá '${code}' bị trùng trong file.`, rawValue: code, severity: 'ERROR' });
-      }
+      // Duplicate source quote codes are disambiguated during commit using
+      // the source row number so no source record is silently dropped.
       seenCodes.add(code);
     }
 
@@ -685,9 +702,8 @@ async function validateQuotations(
       errors.push({ rowNumber: rowNum, field: 'customer_code', error: 'Mã khách hàng không được để trống.', severity: 'ERROR' });
     }
 
-    if (!saleCode) {
-      errors.push({ rowNumber: rowNum, field: 'sale_code', error: 'Mã sale không được để trống.', severity: 'ERROR' });
-    }
+    // Sale can be absent in the source; commit resolves it from the customer
+    // owner or assigns the non-login UNASSIGNED system Sale.
 
     if (isNaN(amount) || amount < 0) {
       errors.push({ rowNumber: rowNum, field: 'total_amount', error: 'Giá trị báo giá phải >= 0.', rawValue: String(r.total_amount), severity: 'ERROR' });
@@ -713,16 +729,13 @@ async function validateOrders(
     const rowNum = lineNumbers[i] ?? i + 2;
     const code = (r.order_code || r.code || '').trim();
     const custCode = (r.customer_code || r.customer_id || '').trim();
-    const saleCode = (r.sale_code || r.sale_id || '').trim();
     const amount = Number(r.total_amount);
     const status = (r.status || '').trim().toUpperCase();
 
     if (!code) {
       errors.push({ rowNumber: rowNum, field: 'order_code', error: 'Mã đơn hàng không được để trống.', severity: 'ERROR' });
     } else {
-      if (seenCodes.has(code)) {
-        errors.push({ rowNumber: rowNum, field: 'order_code', error: `Mã đơn '${code}' bị trùng trong file.`, rawValue: code, severity: 'ERROR' });
-      }
+      // Duplicate source order codes are disambiguated during commit.
       seenCodes.add(code);
     }
 
@@ -730,9 +743,8 @@ async function validateOrders(
       errors.push({ rowNumber: rowNum, field: 'customer_code', error: 'Mã khách hàng không được để trống.', severity: 'ERROR' });
     }
 
-    if (!saleCode) {
-      errors.push({ rowNumber: rowNum, field: 'sale_code', error: 'Mã sale không được để trống.', severity: 'ERROR' });
-    }
+    // Sale can be absent in the source; commit resolves it from the customer
+    // owner or assigns the non-login UNASSIGNED system Sale.
 
     if (isNaN(amount) || amount < 0) {
       errors.push({ rowNumber: rowNum, field: 'total_amount', error: 'Giá trị đơn hàng phải >= 0.', rawValue: String(r.total_amount), severity: 'ERROR' });
@@ -809,11 +821,13 @@ export async function commitImportBatch(
       case 'USERS':
         for (const r of rows) {
           const id = r.email.trim().toLowerCase();
+          const role = r.role.trim().toUpperCase();
+          const loginEnabled = ['HEAD_AUDITOR', 'AUDITOR', 'ADMIN'].includes(role);
           await client.query(
-            `INSERT INTO app_users (id, email, name, role, is_active)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, is_active = EXCLUDED.is_active`,
-            [id, r.email.trim().toLowerCase(), r.name.trim(), r.role.trim().toUpperCase(), r.is_active !== 'false']
+            `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, is_active = EXCLUDED.is_active, login_enabled = EXCLUDED.login_enabled`,
+            [id, r.email.trim().toLowerCase(), r.name.trim(), role, r.is_active !== 'false', loginEnabled]
           );
           successCount++;
         }
@@ -826,9 +840,9 @@ export async function commitImportBatch(
           const cap = Number(r.max_daily_capacity) || 80;
 
           await client.query(
-            `INSERT INTO app_users (id, email, name, role, is_active)
-             VALUES ($1, $2, $3, 'AUDITOR', $4)
-             ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = 'AUDITOR', is_active = EXCLUDED.is_active`,
+            `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+             VALUES ($1, $2, $3, 'AUDITOR', $4, true)
+             ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = 'AUDITOR', is_active = EXCLUDED.is_active, login_enabled = true`,
             [userId, r.email.trim().toLowerCase(), r.name.trim(), r.is_active !== 'false']
           );
 
@@ -853,9 +867,9 @@ export async function commitImportBatch(
           const teamId = teamRes.rows[0]?.id || teamCode;
 
           await client.query(
-            `INSERT INTO app_users (id, email, name, role, is_active)
-             VALUES ($1, $2, $3, 'SALE', $4)
-             ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = 'SALE', is_active = EXCLUDED.is_active`,
+            `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
+             VALUES ($1, $2, $3, 'SALE', $4, false)
+             ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = 'SALE', is_active = EXCLUDED.is_active, login_enabled = false`,
             [userId, r.email.trim().toLowerCase(), r.name.trim(), r.is_active !== 'false']
           );
 
@@ -958,74 +972,124 @@ export async function commitImportBatch(
         break;
 
       case 'CUSTOMERS':
-        for (const r of rows) {
-          const id = r.customer_code.trim();
-          await client.query(
-            `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-             ON CONFLICT (code) DO UPDATE SET
-               name = EXCLUDED.name,
-               phone = EXCLUDED.phone,
-               company = EXCLUDED.company,
-               current_sale_id = EXCLUDED.current_sale_id,
-               current_team_id = EXCLUDED.current_team_id`,
-            [
-              id,
-              r.customer_code.trim(),
-              r.customer_name.trim(),
-              r.phone || null,
-              r.company || null,
-              r.channel || 'Direct Web',
-              r.first_seen_date || new Date().toISOString(),
-              r.current_sale_code || null,
-              r.current_team_code || null,
-            ]
-          );
-          successCount++;
+        {
+          const salesMap = new Map<string, string>();
+          const teamsMap = new Map<string, string>();
+          const [salesRes, teamsRes] = await Promise.all([
+            client.query('SELECT id, sale_code FROM sales_profiles'),
+            client.query('SELECT id, code FROM teams'),
+          ]);
+          for (const row of salesRes.rows) { salesMap.set(row.id, row.id); salesMap.set(row.sale_code, row.id); }
+          for (const row of teamsRes.rows) { teamsMap.set(row.id, row.id); teamsMap.set(row.code, row.id); }
+
+          const batchSize = 250;
+          for (let start = 0; start < rows.length; start += batchSize) {
+            const batch = rows.slice(start, start + batchSize);
+            const values: string[] = [];
+            const params: unknown[] = [];
+            batch.forEach((r, index) => {
+              const offset = index * 9;
+              const id = dbCustomerCode(r.customer_code);
+              const saleCode = r.current_sale_code?.trim() || null;
+              const teamCode = r.current_team_code?.trim() || null;
+              values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`);
+              params.push(
+                id,
+                id,
+                r.customer_name.trim(),
+                r.phone ? String(r.phone).trim().slice(0, 50) : null,
+                r.company || null,
+                r.channel ? String(r.channel).trim().slice(0, 100) : 'Direct Web',
+                r.first_seen_date || new Date().toISOString(),
+                saleCode ? (salesMap.get(saleCode) || null) : null,
+                teamCode ? (teamsMap.get(teamCode) || null) : null,
+              );
+            });
+            await client.query(
+              `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
+               VALUES ${values.join(',')}
+               ON CONFLICT (code) DO UPDATE SET
+                 name = EXCLUDED.name,
+                 phone = EXCLUDED.phone,
+                 company = EXCLUDED.company,
+                 current_sale_id = EXCLUDED.current_sale_id,
+                 current_team_id = EXCLUDED.current_team_id`,
+              params
+            );
+            successCount += batch.length;
+          }
         }
         break;
 
       case 'QUOTATIONS':
-        for (const r of rows) {
-          const id = r.quote_code.trim();
-          await client.query(
-            `INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status, items_summary)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             ON CONFLICT (code) DO UPDATE SET total_amount = EXCLUDED.total_amount, status = EXCLUDED.status`,
-            [
-              id,
-              r.quote_code.trim(),
-              r.customer_code.trim(),
-              r.sale_code.trim(),
-              r.quote_date || new Date().toISOString(),
-              Number(r.total_amount) || 0,
-              r.status.trim().toUpperCase(),
-              r.items_summary || null,
-            ]
-          );
-          successCount++;
+        {
+          const usedCodes = new Map<string, number>();
+          const salesMap = new Map<string, string>();
+          const customerSales = new Map<string, string>();
+          const [salesRes, customersRes] = await Promise.all([
+            client.query('SELECT id, sale_code FROM sales_profiles'),
+            client.query('SELECT id, code, current_sale_id FROM customers'),
+          ]);
+          for (const row of salesRes.rows) { salesMap.set(row.id, row.id); salesMap.set(row.sale_code, row.id); }
+          for (const row of customersRes.rows) { if (row.current_sale_id) { customerSales.set(row.id, row.current_sale_id); customerSales.set(row.code, row.current_sale_id); } }
+          await client.query(`INSERT INTO app_users (id, email, name, role, is_active, login_enabled) VALUES ('SYSTEM-UNASSIGNED-SALE', 'system+unassigned-sale@pending.auditpulse.local', 'Sale chưa phân công', 'SALE', true, false) ON CONFLICT (id) DO NOTHING`);
+          await client.query(`INSERT INTO sales_profiles (id, sale_code, team_id) VALUES ('SYSTEM-UNASSIGNED-SALE', 'UNASSIGNED', NULL) ON CONFLICT (id) DO NOTHING`);
+          const batchSize = 250;
+          for (let start = 0; start < rows.length; start += batchSize) {
+            const batch = rows.slice(start, start + batchSize);
+            const values: string[] = [];
+            const params: unknown[] = [];
+            batch.forEach((r, index) => {
+              const i = start + index;
+            const sourceCode = r.quote_code.trim();
+            const occurrence = (usedCodes.get(sourceCode) || 0) + 1;
+            usedCodes.set(sourceCode, occurrence);
+            const suffix = occurrence === 1 ? '' : `-IMP-${i + 2}`;
+            const code = `${sourceCode.slice(0, Math.max(1, 50 - suffix.length))}${suffix}`;
+            const customerId = dbCustomerCode(r.customer_code);
+              const saleId = (r.sale_code && salesMap.get(r.sale_code.trim())) || customerSales.get(customerId) || 'SYSTEM-UNASSIGNED-SALE';
+              const offset = index * 8;
+              values.push(`($${offset + 1},$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5},$${offset + 6},$${offset + 7},$${offset + 8})`);
+              params.push(code, code, customerId, saleId, r.quote_date || new Date().toISOString(), Number(r.total_amount) || 0, r.status.trim().toUpperCase(), r.items_summary || null);
+            });
+            await client.query(`INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status, items_summary) VALUES ${values.join(',')} ON CONFLICT (code) DO UPDATE SET total_amount = EXCLUDED.total_amount, status = EXCLUDED.status`, params);
+            successCount += batch.length;
+          }
         }
         break;
 
       case 'ORDERS':
-        for (const r of rows) {
-          const id = r.order_code.trim();
-          await client.query(
-            `INSERT INTO sales_orders (id, code, customer_id, sale_id, quotation_id, order_date, total_amount, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             ON CONFLICT (code) DO UPDATE SET total_amount = EXCLUDED.total_amount, status = EXCLUDED.status`,
-            [
-              id,
-              r.order_code.trim(),
-              r.customer_code.trim(),
-              r.sale_code.trim(),
-              r.quote_code?.trim() || null,
-              r.order_date || new Date().toISOString(),
-              Number(r.total_amount) || 0,
-              r.status.trim().toUpperCase(),
-            ]
-          );
-          successCount++;
+        {
+          const usedCodes = new Map<string, number>();
+          const salesMap = new Map<string, string>();
+          const customerSales = new Map<string, string>();
+          const [salesRes, customersRes] = await Promise.all([
+            client.query('SELECT id, sale_code FROM sales_profiles'),
+            client.query('SELECT id, code, current_sale_id FROM customers'),
+          ]);
+          for (const row of salesRes.rows) { salesMap.set(row.id, row.id); salesMap.set(row.sale_code, row.id); }
+          for (const row of customersRes.rows) { if (row.current_sale_id) { customerSales.set(row.id, row.current_sale_id); customerSales.set(row.code, row.current_sale_id); } }
+          const batchSize = 250;
+          for (let start = 0; start < rows.length; start += batchSize) {
+            const batch = rows.slice(start, start + batchSize);
+            const values: string[] = [];
+            const params: unknown[] = [];
+            batch.forEach((r, index) => {
+            const i = start + index;
+            const sourceCode = r.order_code.trim();
+            const occurrence = (usedCodes.get(sourceCode) || 0) + 1;
+            usedCodes.set(sourceCode, occurrence);
+            const suffix = occurrence === 1 ? '' : `-IMP-${i + 2}`;
+            const code = `${sourceCode.slice(0, Math.max(1, 50 - suffix.length))}${suffix}`;
+            const customerId = dbCustomerCode(r.customer_code);
+              const saleId = (r.sale_code && salesMap.get(r.sale_code.trim())) || customerSales.get(customerId) || 'SYSTEM-UNASSIGNED-SALE';
+              const offset = index * 8;
+              values.push(`($${offset + 1},$${offset + 2},$${offset + 3},$${offset + 4},$${offset + 5},$${offset + 6},$${offset + 7},$${offset + 8})`);
+              params.push(code, code, customerId, saleId, r.quote_code?.trim() || null, r.order_date || new Date().toISOString(), Number(r.total_amount) || 0, r.status.trim().toUpperCase());
+            });
+            await client.query(`INSERT INTO sales_orders (id, code, customer_id, sale_id, quotation_id, order_date, total_amount, status) VALUES ${values.join(',')} ON CONFLICT (code) DO UPDATE SET total_amount = EXCLUDED.total_amount, status = EXCLUDED.status`, params);
+            successCount += batch.length;
+          }
         }
         break;
 
