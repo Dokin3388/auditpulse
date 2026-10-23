@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "{server/**,src/services/workflowRules.ts,src/types/index.ts}"
+      "includeFiles": "{server/**,src/services/workflowRules.ts,src/services/authPolicy.ts,src/types/index.ts}"
     }
   },
   "rewrites": [
