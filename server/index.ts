@@ -70,17 +70,6 @@ app.post('/api/auth/sign-in/email', async (req: Request, res: Response, next: Ne
   }
 
   const appUser = await getAppUserByEmail(email);
-  if (email.toLowerCase() === 'ngandoan.jobup@gmail.com') {
-    const runtime = await query<{ database: string; server: string | null }>(
-      `SELECT current_database() AS database, inet_server_addr()::text AS server`
-    );
-    console.info('[auth-bootstrap-db]', {
-      ...runtime.rows[0],
-      appUser: appUser
-        ? { id: appUser.id, email: appUser.email, role: appUser.role, loginEnabled: appUser.loginEnabled, isActive: appUser.isActive }
-        : null,
-    });
-  }
   const blockReason = getLoginGateFailure({
     role: appUser?.role ?? null,
     loginEnabled: appUser?.loginEnabled ?? null,
