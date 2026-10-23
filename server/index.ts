@@ -17,9 +17,13 @@ import {
   canSaleMarkActionDone,
   canAuditorStartRecheck,
   canAuditorSubmitRecheck,
-  resolveAssignmentChain,
-  getDayBefore,
 } from '../src/services/workflowRules.ts';
+import {
+  createAssignmentsInTransaction,
+  listAssignments,
+  parseCreateInput,
+  toAssignmentError,
+} from './services/assignments.ts';
 import type { RecheckResult, CorrectiveActionStatus } from '../src/types/index.ts';
 import { auth } from './auth.ts';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
@@ -328,7 +332,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
     }
     if (auditorId) {
       values.push(auditorId);
-      conditions.push(`COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) = $${values.length}`);
+      conditions.push(`(COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) = $${values.length} OR queue_auditor.auditor_code = $${values.length})`);
     }
     if (saleId) {
       values.push(saleId);
@@ -350,7 +354,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         q.snapshot_sale_name AS "saleName",
         q.team_id AS "teamId",
         q.snapshot_team_name AS "teamName",
-        COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) AS "assignedAuditorId",
+        COALESCE(queue_auditor.auditor_code, COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id)) AS "assignedAuditorId",
         COALESCE(q.snapshot_auditor_name, effective_assignment.auditor_name) AS "assignedAuditorName",
         q.assigned_at AS "assignedAt",
         CASE
@@ -402,6 +406,8 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         ORDER BY a.effective_from DESC
         LIMIT 1
       ) effective_assignment ON true
+      LEFT JOIN auditor_profiles queue_auditor
+        ON queue_auditor.id = COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id)
       ${whereClause}
       -- Newest audit days are the operational worklist; history remains
       -- available through the explicit date filter.
@@ -968,146 +974,40 @@ app.post('/api/actions/:id/submit-recheck', async (req: Request, res: Response) 
 // ============================================================================
 app.get('/api/assignments', async (req: Request, res: Response) => {
   try {
-    const { saleId } = req.query;
-    const values: unknown[] = [];
-    let whereClause = '';
-
-    if (saleId) {
-      values.push(saleId);
-      whereClause = 'WHERE a.sale_id = $1';
-    }
-
-    const sql = `
-      SELECT 
-        a.id,
-        a.sale_id AS "saleId",
-        a.snapshot_sale_name AS "saleName",
-        a.snapshot_team_name AS "teamName",
-        a.auditor_id AS "auditorId",
-        a.snapshot_auditor_name AS "auditorName",
-        a.effective_from AS "effectiveFrom",
-        a.effective_to AS "effectiveTo",
-        a.assignment_reason AS "assignmentReason",
-        a.created_by AS "createdBy",
-        a.created_at AS "createdAt",
-        a.is_active AS "isActive"
-      FROM auditor_assignments a
-      ${whereClause}
-      ORDER BY a.effective_from DESC;
-    `;
-
-    const result = await query(sql, values);
-    res.json({ data: result.rows });
+    const saleRef = typeof req.query.saleId === 'string' && req.query.saleId ? req.query.saleId : undefined;
+    const data = await listAssignments({ query }, { saleRef });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ data });
   } catch (err: unknown) {
+    console.error('[assignments] GET failed:', err);
     const message = err instanceof Error ? err.message : 'Error retrieving assignments';
     res.status(500).json({ error: message });
   }
 });
 
-// Create Assignment with Overlap Prevention
+// Create assignment(s). Body: { saleId | saleIds[], auditorId, effectiveFrom, reason }.
+// saleId/auditorId may be app_users.id or the human-facing code. All sales are written in
+// ONE transaction; the response carries the rows read back from the database.
 app.post('/api/assignments', async (req: Request, res: Response) => {
-  const { saleId, auditorId, effectiveFrom, reason } = req.body;
   const actor = res.locals.actor as AppActor;
-  const actorRole = actor.role;
-  const createdBy = actor.name;
 
-  if (actorRole !== 'HEAD_AUDITOR' && actorRole !== 'ADMIN') {
+  if (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN') {
     res.status(403).json({ error: 'Từ chối quyền: Chỉ Head Auditor mới có quyền tạo phân công.' });
     return;
   }
 
   try {
-    // 1. Fetch current assignments for this sale
-    const existingRes = await query(
-      `SELECT id, sale_id AS "saleId", auditor_id AS "auditorId", snapshot_auditor_name AS "auditorName",
-              effective_from AS "effectiveFrom", effective_to AS "effectiveTo", is_active AS "isActive"
-       FROM auditor_assignments 
-       WHERE sale_id = $1 
-       ORDER BY effective_from ASC`,
-      [saleId]
-    );
-
-    // 2. Fetch sale & auditor metadata
-    const userRes = await query(
-      `SELECT u.id, u.name, u.role, t.name AS "teamName"
-       FROM app_users u
-       LEFT JOIN sales_profiles sp ON sp.id = u.id
-       LEFT JOIN teams t ON t.id = sp.team_id
-       WHERE u.id IN ($1, $2)`,
-      [saleId, auditorId]
-    );
-
-    const saleUser = userRes.rows.find((u) => u.id === saleId);
-    const auditorUser = userRes.rows.find((u) => u.id === auditorId);
-
-    const saleName = saleUser?.name || `Sale ${saleId}`;
-    const auditorName = auditorUser?.name || `Auditor ${auditorId}`;
-    const teamName = saleUser?.teamName || 'Chưa có team';
-
-    // 3. Resolve interval chain using domain math
-    const resolution = resolveAssignmentChain(existingRes.rows as any, {
-      saleId,
-      auditorId,
-      effectiveFrom,
-      reason,
-      createdBy,
-      saleName,
-      teamName,
-      auditorName,
-    });
-
-    if (!resolution.success) {
-      res.status(409).json({ error: resolution.message });
+    const input = parseCreateInput(req.body);
+    const result = await withTransaction((client) => createAssignmentsInTransaction(client, input, actor));
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(201).json({ success: true, message: result.message, data: result.assignments });
+  } catch (err: unknown) {
+    const known = toAssignmentError(err);
+    if (known) {
+      res.status(known.status).json({ error: known.message, code: known.code });
       return;
     }
-
-    // 4. Apply changes within a single database transaction
-    await withTransaction(async (client) => {
-      // If there was an open-ended assignment that needs to be capped
-      const dayBeforeStr = getDayBefore(effectiveFrom);
-      await client.query(
-        `UPDATE auditor_assignments 
-         SET effective_to = $1 
-         WHERE sale_id = $2 AND effective_to IS NULL`,
-        [dayBeforeStr, saleId]
-      );
-
-      // Insert new assignment
-      const newAsgId = `ASG-${Date.now()}`;
-      await client.query(
-        `INSERT INTO auditor_assignments (
-           id, sale_id, auditor_id, effective_from, effective_to,
-           assignment_reason, created_by, is_active,
-           snapshot_sale_name, snapshot_auditor_name, snapshot_team_name
-         ) VALUES ($1, $2, $3, $4, NULL, $5, $6, ($4 <= CURRENT_DATE), $7, $8, $9)`,
-        [
-          newAsgId,
-          saleId,
-          auditorId,
-          effectiveFrom,
-          reason,
-          createdBy,
-          saleName,
-          auditorName,
-          teamName,
-        ]
-      );
-
-      // Audit trail
-      await client.query(
-        `INSERT INTO audit_trail_events (id, action_type, description, details, actor_name, actor_role)
-         VALUES ($1, 'AUDITOR_ASSIGNMENT_UPDATED', $2, $3, $4, 'HEAD_AUDITOR')`,
-        [
-          `TRL-${Date.now()}`,
-          `Head Auditor phân công ${saleName} cho ${auditorName} từ ${effectiveFrom}.`,
-          `Lý do: ${reason}`,
-          createdBy,
-        ]
-      );
-    });
-
-    res.json({ success: true, message: resolution.message });
-  } catch (err: unknown) {
+    console.error('[assignments] POST failed:', err);
     const message = err instanceof Error ? err.message : 'Error creating assignment';
     res.status(500).json({ error: message });
   }

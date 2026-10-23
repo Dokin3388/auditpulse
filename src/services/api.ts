@@ -54,22 +54,49 @@ export async function materializeAuditQueue(auditDate = todayInVietnam()): Promi
   }
 }
 
-export async function createAssignment(input: {
-  saleId: string;
+export interface CreateAssignmentsRequest {
+  /** app_users.id or sale code. */
+  saleIds: string[];
+  /** app_users.id or auditor code. */
   auditorId: string;
+  /** YYYY-MM-DD (Vietnam business date). */
   effectiveFrom: string;
   reason: string;
-}): Promise<void> {
-  const response = await fetch('/api/assignments', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error || 'Không thể lưu phân công lên Neon.');
+}
+
+export interface CreateAssignmentsResult {
+  message: string;
+  /** Rows exactly as read back from the database by the server. */
+  assignments: AuditorAssignment[];
+}
+
+/**
+ * Persists assignments. Resolves ONLY after the server has committed and read the rows back;
+ * rejects with the server's real error message otherwise. Callers must not show a
+ * success state before this promise resolves.
+ */
+export async function createAssignments(input: CreateAssignmentsRequest): Promise<CreateAssignmentsResult> {
+  let response: Response;
+  try {
+    response = await fetch('/api/assignments', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    throw new Error('Không kết nối được máy chủ. Phân công CHƯA được lưu — vui lòng thử lại.');
   }
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string; message?: string; data?: AuditorAssignment[] }
+    | null;
+  if (!response.ok) {
+    throw new Error(payload?.error || `Không thể lưu phân công (HTTP ${response.status}). Phân công CHƯA được lưu.`);
+  }
+  if (!payload || !Array.isArray(payload.data) || payload.data.length === 0) {
+    throw new Error('Máy chủ phản hồi thiếu bản ghi phân công; không thể xác nhận đã lưu.');
+  }
+  return { message: payload.message || 'Đã lưu phân công.', assignments: payload.data };
 }
 
 export async function bootstrapAuditorAccounts(): Promise<Array<{ id: string; name: string; email: string; password: string }>> {
@@ -89,7 +116,7 @@ interface ApiListResponse<T> {
 }
 
 async function getList<T>(path: string): Promise<T[]> {
-  const response = await fetch(path);
+  const response = await fetch(path, { credentials: 'include', cache: 'no-store' });
   if (!response.ok) throw new Error(`Không thể tải dữ liệu: ${path}`);
   const payload = (await response.json()) as ApiListResponse<T>;
   return payload.data;

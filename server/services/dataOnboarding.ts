@@ -456,6 +456,7 @@ async function validateAssignments(
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const rowNum = lineNumbers[i] ?? i + 2;
+    const saleCode = (r.sale_code || r.sale_id || '').trim();
     const auditorCode = (r.auditor_code || r.auditor_id || '').trim();
     const effectiveFrom = (r.effective_from || '').trim();
     const effectiveTo = (r.effective_to || '').trim() || null;
