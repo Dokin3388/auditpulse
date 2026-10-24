@@ -38,6 +38,8 @@ async function withFixtures(run: (f: F, c: pg.PoolClient) => Promise<void>) {
         [mk(n), `Khach ${n} ${tag}`, firstSeen, owner, owner ? f.team : null]);
     await cust('NEW', '2026-10-23T03:00:00Z', f.sale);          // created "yesterday", no quote
     await cust('OLDNOQUOTE', '2026-09-01T03:00:00Z', f.sale);   // old, never quoted
+    await cust('RECENT', '2026-10-20T03:00:00Z', f.sale);       // 4 days old, never quoted
+    await cust('STALEQUOTE', '2026-07-01T03:00:00Z', f.sale);   // quoted long ago, no order
     await cust('QUOTED', '2026-09-01T03:00:00Z', f.sale);       // quoted, no order
     await cust('ORDERED', '2026-09-01T03:00:00Z', f.sale);      // quoted + valid order
     await cust('TODAY', '2026-10-24T03:00:00Z', f.sale);        // created on audit day itself
@@ -46,6 +48,7 @@ async function withFixtures(run: (f: F, c: pg.PoolClient) => Promise<void>) {
       c.query(`INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status) VALUES ($1,$1,$2,$3,$4::timestamptz,1000,'PENDING')`,
         [`Q-${tag}-${n}`, f.ids[n], f.sale, date]);
     await quote('QUOTED', '2026-10-01T03:00:00Z');
+    await quote('STALEQUOTE', '2026-08-01T03:00:00Z');
     await quote('ORDERED', '2026-10-01T03:00:00Z');
     await c.query(`INSERT INTO sales_orders (id, code, customer_id, sale_id, order_date, total_amount, status) VALUES ($1,$1,$2,$3,'2026-10-05T03:00:00Z',1000,'VALID')`,
       [`O-${tag}-ORDERED`, f.ids.ORDERED, f.sale]);
@@ -90,7 +93,9 @@ liveTest('Daily rules: yesterday customers + no quotation + quoted-not-ordered l
     const rows = await items(f, '2026-10-24');
     const byId = Object.fromEntries(rows.map((r) => [r.customer_id.replace(`CUS-${f.tag}-`, ''), codes(r)]));
     assert.deepEqual(byId.NEW, ['NO_QUOTATION', 'YESTERDAY_CUSTOMERS']);
-    assert.deepEqual(byId.OLDNOQUOTE, ['NO_QUOTATION']);
+    assert.equal(byId.OLDNOQUOTE, undefined, 'never-quoted customers older than 7 days leave the daily queue');
+    assert.deepEqual(byId.RECENT, ['NO_QUOTATION']);
+    assert.equal(byId.STALEQUOTE, undefined, 'quotations older than 30 days are not chased any more');
     assert.deepEqual(byId.QUOTED, ['QUOTED_NOT_ORDERED']);
     assert.equal(byId.ORDERED, undefined, 'customer with quote AND valid order is not at risk');
     assert.equal(byId.TODAY, undefined, 'customer created on the audit day itself is not in that day yet');
@@ -114,7 +119,7 @@ liveTest('Back-filling a past date does not leak newer customers into it', async
     const ids = (await items(f, '2026-10-23')).map((r) => r.customer_id.replace(`CUS-${f.tag}-`, ''));
     assert.ok(!ids.includes('NEW'), 'NEW was created 23/10, so it is not in the 23/10 queue');
     assert.ok(!ids.includes('TODAY'));
-    assert.ok(ids.includes('OLDNOQUOTE'));
+    assert.ok(ids.includes('RECENT'));
   });
 });
 

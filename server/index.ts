@@ -4,7 +4,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { query, withTransaction, pool } from './db.ts';
 import {
   parseCsv,
@@ -373,18 +373,20 @@ app.get('/api/queue', async (req: Request, res: Response) => {
               'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách trong 2 ngày trước',
               'description', 'Khách được ghi nhận trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
             )) ELSE '[]'::jsonb END
-          || CASE WHEN NOT EXISTS (
+          || CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= q.audit_date - 7
+            AND NOT EXISTS (
             SELECT 1 FROM quotations qt
             WHERE qt.customer_id = q.customer_id
               AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date - 1
           ) THEN jsonb_build_array(jsonb_build_object(
             'code', 'NO_QUOTATION', 'label', 'Chưa báo giá',
-            'description', 'Chưa có báo giá nào tính đến D-1.', 'detectedAt', q.audit_date::text
+            'description', 'Khách mới trong 7 ngày, chưa có báo giá nào tính đến D-1.', 'detectedAt', q.audit_date::text
           )) ELSE '[]'::jsonb END
           || CASE WHEN EXISTS (
             SELECT 1 FROM quotations qt
             WHERE qt.customer_id = q.customer_id
               AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date - 1
+              AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= q.audit_date - 30
               AND NOT EXISTS (
                 SELECT 1 FROM sales_orders so
                 WHERE so.customer_id = q.customer_id AND so.status = 'VALID'
@@ -393,7 +395,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
               )
           ) THEN jsonb_build_array(jsonb_build_object(
             'code', 'QUOTED_NOT_ORDERED', 'label', 'Báo giá chưa chốt',
-            'description', 'Có báo giá nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
+            'description', 'Có báo giá trong 30 ngày nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
           )) ELSE '[]'::jsonb END
           || COALESCE(q.risk_tags, '[]'::jsonb)
         ) AS "riskTags",
