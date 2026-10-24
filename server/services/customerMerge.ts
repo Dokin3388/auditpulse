@@ -151,7 +151,16 @@ export function buildMergePlan(
       needsReview.push({ phones: phones.slice(0, 10), customerIds: memberIds.slice(0, 20) });
       continue;
     }
-    const ranked = rankCustomers(memberIds.map((id) => byId.get(id)!));
+    const members = memberIds.map((id) => byId.get(id)!);
+    const placeholders = members.filter((m) => m.channel === 'HISTORICAL_TRANSACTION').length;
+    // A placeholder account (MISA code without CRM record) can carry rows with
+    // several people's phones. If it links two real CRM customers it is a bridge,
+    // not proof that they are the same person: leave the whole group for review.
+    if (placeholders > 0 && members.length - placeholders >= 2) {
+      needsReview.push({ phones: phones.slice(0, 10), customerIds: memberIds.slice(0, 20) });
+      continue;
+    }
+    const ranked = rankCustomers(members);
     const [winner, ...losers] = ranked;
     const ownerIds = new Set(ranked.map((c) => c.currentSaleId).filter(Boolean));
     clusters.push({
