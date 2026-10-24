@@ -13,6 +13,8 @@ import {
   type EntityType,
 } from './services/dataOnboarding.ts';
 import { syncGoogleSheetWebhook, type GoogleSheetWebhookPayload } from './services/googleSheetsWebhook.ts';
+import { customerIdentityReport } from './services/customerIdentity.ts';
+import { applyCustomerMerge, planCustomerMerge } from './services/customerMerge.ts';
 import {
   canSaleMarkActionDone,
   canAuditorStartRecheck,
@@ -232,6 +234,51 @@ app.get('/api/issue-definitions', async (_req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Không thể tải danh mục lỗi.';
     res.status(500).json({ error: message });
+  }
+});
+
+// Customer identity data quality (phone-first mapping of customers/quotations/orders).
+// GET  report: coverage, duplicates, unmatched transactions, last sync metrics.
+// POST merge : { apply: false } previews duplicate groups; { apply: true } merges a
+//              time-boxed batch (call again while `remaining` > 0). Head Auditor/Admin only.
+app.get('/api/admin/customer-identity/report', async (_req: Request, res: Response) => {
+  const actor = res.locals.actor as AppActor;
+  if (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Chỉ Head Auditor/Admin được xem báo cáo chất lượng map dữ liệu.' });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, data: await customerIdentityReport(client) });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Không thể tạo báo cáo chất lượng map dữ liệu.' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/customer-identity/merge', async (req: Request, res: Response) => {
+  const actor = res.locals.actor as AppActor;
+  if (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Chỉ Head Auditor/Admin được gộp khách trùng.' });
+    return;
+  }
+  const apply = req.body?.apply === true;
+  const client = await pool.connect();
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!apply) {
+      const plan = await planCustomerMerge(client);
+      res.json({ success: true, apply: false, data: { ...plan, clusters: plan.clusters.slice(0, 50) } });
+      return;
+    }
+    const result = await applyCustomerMerge(client, { actor: `${actor.name} (${actor.role})` });
+    res.json({ success: true, apply: true, data: result });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Không thể gộp khách trùng.' });
+  } finally {
+    client.release();
   }
 });
 

@@ -1,5 +1,18 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
+import {
+  bindIdentifiers,
+  chooseCustomer,
+  ensureCustomerIdentitySchema,
+  hasIdentity,
+  identitySignals,
+  markUnmatchedResolved,
+  reconcileUnmatchedTransactions,
+  recordUnmatchedTransaction,
+  resolveCustomerBySignals,
+  type IdentitySignals,
+  type TransactionKind,
+} from './customerIdentity.ts';
 
 export interface GoogleSheetWebhookPayload {
   sourceId: string;
@@ -11,17 +24,40 @@ export interface GoogleSheetWebhookPayload {
   spreadsheetId?: string;
 }
 
+/** Per-delivery data-quality counters, stored in google_sheet_sync_runs.metadata.identity. */
+export interface IdentityStats {
+  customersCreated: number;
+  customersMatched: number;
+  customerRowsRejected: number;
+  identifiersBound: number;
+  identityConflicts: number;
+  unmatchedQuotations: number;
+  unmatchedOrders: number;
+  noIdentifier: number;
+  reconciled: number;
+  invalidDates: number;
+  ownerUnresolved: number;
+}
+
+export function newIdentityStats(): IdentityStats {
+  return {
+    customersCreated: 0, customersMatched: 0, customerRowsRejected: 0, identifiersBound: 0, identityConflicts: 0,
+    unmatchedQuotations: 0, unmatchedOrders: 0, noIdentifier: 0, reconciled: 0, invalidDates: 0, ownerUnresolved: 0,
+  };
+}
+
 export interface GoogleSheetSyncResult {
   duplicate: boolean;
   totalRows: number;
   appliedRows: number;
   skippedRows: number;
   runId: string;
+  identity?: IdentityStats;
 }
 
 const MAX_ROWS_PER_DELIVERY = 500;
 
-function text(value: unknown): string {
+export function text(value: unknown): string {
   return String(value ?? '').trim();
 }
 
@@ -37,7 +73,7 @@ function boundedText(value: unknown, maxLength: number): string {
  * collapsing different long values onto the same truncated key. The complete
  * source value is still retained in google_sheet_row_state.payload.
  */
-function boundedKey(value: unknown, maxLength = 50): string {
+export function boundedKey(value: unknown, maxLength = 50): string {
   const normalized = text(value);
   if (!normalized || normalized.length <= maxLength) return normalized;
 
@@ -75,8 +111,10 @@ export function googleSheetSourceRowKey(sheetName: string, row: Record<string, s
   return `${sheet}:${fallbackIndex}`;
 }
 
-function dateOrNow(value: string): string {
+/** Parse a sheet date (DD/MM/YYYY first, then ISO-like). Null when unreadable. */
+export function parseSheetDate(value: string): string | null {
   const raw = text(value);
+  if (!raw) return null;
   // Vietnamese source sheets use DD/MM/YYYY (and sometimes DD-MM-YYYY).
   // Date.parse is locale-dependent and silently turns 02/01/2026 into the
   // wrong month on a US-runtime, so parse these dates explicitly first.
@@ -89,7 +127,15 @@ function dateOrNow(value: string): string {
     }
   }
   const parsed = Date.parse(raw);
-  return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
+/** Unreadable dates fall back to "now" (columns are NOT NULL) but are counted. */
+function dateOrNow(value: string, stats?: IdentityStats): string {
+  const parsed = parseSheetDate(value);
+  if (parsed) return parsed;
+  if (stats) stats.invalidDates++;
+  return new Date().toISOString();
 }
 
 export function googleSheetAmount(value: string): number {
@@ -164,50 +210,46 @@ async function resolveTeamId(client: pg.PoolClient, teamNameOrCode: string): Pro
   return result.rows[0]?.id ?? null;
 }
 
-async function resolveCustomerId(client: pg.PoolClient, customerCode: string): Promise<string | null> {
-  const value = text(customerCode);
-  if (!value) return null;
-  const result = await client.query('SELECT id FROM customers WHERE code = $1 OR phone = $1 LIMIT 1', [value]);
-  return result.rows[0]?.id ?? null;
+/** Accent/case-insensitive key so "Nguyễn  Văn A" and "nguyen van a" match. */
+function nameKey(value: unknown): string {
+  return text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, ' ');
 }
 
-/** Keep every historical quotation/order even when its customer was not
- * present in the CRM customer tab. The transaction identity is still unique
- * by customer code/phone; only truly incomplete rows fall back to a stable
- * name+phone fingerprint instead of being silently dropped. */
-async function resolveOrCreateHistoricalCustomerId(
+/**
+ * Resolve the customer of a quotation/order through normalized identifiers
+ * (phone first, customer code second). Never invents a customer: a row that
+ * cannot be resolved is parked in unmatched_transactions and retried when the
+ * customer appears in the CRM sheet.
+ */
+async function resolveTransactionCustomer(
   client: pg.PoolClient,
-  customerCodeOrPhone: string,
-  customerName: string,
-  phone: string,
-  firstSeenDate: string
-): Promise<string | null> {
-  const lookup = text(customerCodeOrPhone);
-  const existingId = await resolveCustomerId(client, lookup);
-  if (existingId) return existingId;
-
-  const boundedLookup = boundedKey(lookup);
-  if (boundedLookup && boundedLookup !== lookup) {
-    const boundedExistingId = await resolveCustomerId(client, boundedLookup);
-    if (boundedExistingId) return boundedExistingId;
+  input: { kind: TransactionKind; sheetName: string; sourceCode: string; row: Record<string, string>; phoneCell: string; codeCell: string },
+  stats: IdentityStats
+): Promise<{ customerId: string; signals: IdentitySignals } | null> {
+  const signals = identitySignals(input.phoneCell, input.codeCell);
+  const resolved = await resolveCustomerBySignals(client, signals);
+  if (!resolved.customerId) {
+    await recordUnmatchedTransaction(client, {
+      kind: input.kind, sheetName: normalizeGoogleSheetHeader(input.sheetName), sourceCode: input.sourceCode, signals, row: input.row,
+    });
+    if (input.kind === 'QUOTATION') stats.unmatchedQuotations++;
+    else stats.unmatchedOrders++;
+    if (!hasIdentity(signals)) stats.noIdentifier++;
+    return null;
   }
-
-  const name = text(customerName) || 'Khách hàng lịch sử';
-  const identity = lookup || `${name}|${primaryGoogleSheetPhone(phone) || ''}`;
-  if (!identity) return null;
-  const fingerprint = createHash('sha256').update(identity.toLowerCase()).digest('hex').slice(0, 24);
-  const code = boundedKey(lookup || `LEGACY-CUSTOMER-${fingerprint}`);
-  await client.query(
-    `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
-     VALUES ($1, $2, $3, $4, NULL, 'HISTORICAL_TRANSACTION', $5, NULL, NULL)
-     ON CONFLICT (code) DO UPDATE SET name = COALESCE(NULLIF(customers.name, ''), EXCLUDED.name),
-       phone = COALESCE(customers.phone, EXCLUDED.phone)`,
-    [code, code, name, primaryGoogleSheetPhone(phone), dateOrNow(firstSeenDate)]
-  );
-  return code;
+  // Learn the phone <-> code link: a quotation is where a code is first issued.
+  const bound = await bindIdentifiers(client, resolved.customerId, signals, input.kind);
+  stats.identifiersBound += bound.bound;
+  if (bound.conflicts > 0) stats.identityConflicts++;
+  return { customerId: resolved.customerId, signals };
 }
 
-async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row: Record<string, string>): Promise<boolean> {
+async function applyOperationalRow(
+  client: pg.PoolClient,
+  sheetName: string,
+  row: Record<string, string>,
+  stats: IdentityStats = newIdentityStats()
+): Promise<boolean> {
   const sheet = normalizeGoogleSheetHeader(sheetName);
 
   if (sheet === 'data_team_sale') {
@@ -262,51 +304,47 @@ async function applyOperationalRow(client: pg.PoolClient, sheetName: string, row
   }
 
   if (sheet === 'data_customers' || sheet === 'tonghopkhachhang') {
-    const sourceCode = row.ma_khach_hang || row.so_dien_thoai;
-    const code = boundedKey(sourceCode);
-    if (!sourceCode || !code || !row.ten_kh) return false;
-    const saleId = await resolveSaleId(client, row.nguoi_phu_trach);
-    const teamId = await resolveTeamId(client, row.team);
-    await client.query(
-      `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
-       VALUES ($1, $1, $2, $3, NULL, $4, $5, $6, $7)
-       ON CONFLICT (code) DO UPDATE SET
-         name = EXCLUDED.name, phone = EXCLUDED.phone, channel = EXCLUDED.channel,
-         current_sale_id = EXCLUDED.current_sale_id, current_team_id = EXCLUDED.current_team_id`,
-      [code, row.ten_kh, primaryGoogleSheetPhone(row.so_dien_thoai), boundedText(row.nguon_khach_hang, 100) || null, dateOrNow(row.thoi_gian), saleId, teamId]
-    );
-    return true;
+    const [handled] = await applyCustomerRows(client, [{ row, rowKey: '', hash: '' }], stats);
+    return handled;
   }
 
   if (sheet === 'misa_bao_gia_ggs') {
     const code = row.so_bao_gia;
-    const customerKey = row.ma_khach_hang_unique || row.sdt;
-    const customerId = await resolveOrCreateHistoricalCustomerId(client, customerKey, row.khach_hang, row.sdt, row.ngay_bao_gia);
+    if (!code) return false;
+    const match = await resolveTransactionCustomer(
+      client, { kind: 'QUOTATION', sheetName, sourceCode: code, row, phoneCell: row.sdt, codeCell: row.ma_khach_hang_unique }, stats
+    );
+    if (!match) return false;
     const saleId = await resolveOrCreateHistoricalSaleId(client, row.nhan_vien);
-    if (!code || !customerId || !saleId) return false;
+    if (!saleId) return false;
     await client.query(
       `INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status)
        VALUES ($1, $1, $2, $3, $4, $5, 'PENDING')
        ON CONFLICT (code) DO UPDATE SET customer_id = EXCLUDED.customer_id, sale_id = EXCLUDED.sale_id,
          quote_date = EXCLUDED.quote_date, total_amount = EXCLUDED.total_amount`,
-      [code, customerId, saleId, dateOrNow(row.ngay_bao_gia), googleSheetAmount(row.tong_tien)]
+      [code, match.customerId, saleId, dateOrNow(row.ngay_bao_gia, stats), googleSheetAmount(row.tong_tien)]
     );
+    await markUnmatchedResolved(client, 'QUOTATION', code, match.customerId);
     return true;
   }
 
   if (sheet === 'misa_don_hang_ggs') {
     const code = row.so_chung_tu;
-    const customerKey = row.ma_khach_hang_unique || row.sdt;
-    const customerId = await resolveOrCreateHistoricalCustomerId(client, customerKey, row.ten_khach_hang, row.sdt, row.ngay_chung_tu);
+    if (!code) return false;
+    const match = await resolveTransactionCustomer(
+      client, { kind: 'ORDER', sheetName, sourceCode: code, row, phoneCell: row.sdt, codeCell: row.ma_khach_hang_unique }, stats
+    );
+    if (!match) return false;
     const saleId = await resolveOrCreateHistoricalSaleId(client, row.ten_nhan_vien);
-    if (!code || !customerId || !saleId) return false;
+    if (!saleId) return false;
     await client.query(
       `INSERT INTO sales_orders (id, code, customer_id, sale_id, order_date, total_amount, status)
        VALUES ($1, $1, $2, $3, $4, $5, 'VALID')
        ON CONFLICT (code) DO UPDATE SET customer_id = EXCLUDED.customer_id, sale_id = EXCLUDED.sale_id,
          order_date = EXCLUDED.order_date, total_amount = EXCLUDED.total_amount`,
-      [code, customerId, saleId, dateOrNow(row.ngay_chung_tu), googleSheetAmount(row.tong_thanh_toan)]
+      [code, match.customerId, saleId, dateOrNow(row.ngay_chung_tu, stats), googleSheetAmount(row.tong_thanh_toan)]
     );
+    await markUnmatchedResolved(client, 'ORDER', code, match.customerId);
     return true;
   }
 
@@ -337,75 +375,177 @@ type PendingGoogleSheetRow = {
 
 /**
  * The customer tab is large enough that one network round-trip per row will
- * exceed a serverless request timeout. Resolve its small reference catalogs
- * once, then upsert the whole incoming chunk in one statement.
+ * exceed a serverless request timeout, so the whole delivery is resolved with a
+ * handful of set-based statements.
+ *
+ * Identity: a CRM row is matched to an existing customer by normalized phone
+ * (any of its phones) and then by customer code. Only when neither is known is
+ * a new customer created, so a code that appears later (it is issued with the
+ * first quotation) enriches the same customer instead of creating a second one.
+ * The sale owner is kept when the cell names someone we cannot resolve.
  */
 async function applyCustomerRows(
   client: pg.PoolClient,
-  rows: PendingGoogleSheetRow[]
+  rows: PendingGoogleSheetRow[],
+  stats: IdentityStats = newIdentityStats()
 ): Promise<boolean[]> {
-  const validRows = rows.filter(({ row }) => {
-    const sourceCode = row.ma_khach_hang || row.so_dien_thoai;
-    return Boolean(sourceCode && boundedKey(sourceCode) && row.ten_kh);
+  const prepared = rows.map(({ row }) => {
+    const signals = identitySignals(row.so_dien_thoai, row.ma_khach_hang);
+    return { row, signals, valid: Boolean(text(row.ten_kh) && hasIdentity(signals)) };
   });
+  const validRows = prepared.filter((item) => item.valid);
+  stats.customerRowsRejected += prepared.length - validRows.length;
   if (validRows.length === 0) return rows.map(() => false);
 
-  const [sales, teams] = await Promise.all([
-    client.query(`SELECT sp.id, sp.sale_code, u.name FROM sales_profiles sp JOIN app_users u ON u.id = sp.id`),
-    client.query(`SELECT id, code, name FROM teams`),
-  ]);
+  const sales = await client.query(`SELECT sp.id, sp.sale_code, u.name FROM sales_profiles sp JOIN app_users u ON u.id = sp.id`);
+  const teams = await client.query(`SELECT id, code, name FROM teams`);
+  const hits = await client.query(
+    `SELECT kind, value, customer_id FROM customer_identifiers
+     WHERE (kind = 'PHONE' AND value = ANY($1::text[])) OR (kind = 'CODE' AND value = ANY($2::text[]))`,
+    [
+      [...new Set(validRows.flatMap((item) => item.signals.phones))],
+      [...new Set(validRows.map((item) => item.signals.code).filter((code): code is string => Boolean(code)))],
+    ]
+  );
   const saleIds = new Map<string, string>();
   sales.rows.forEach((sale) => {
-    saleIds.set(text(sale.sale_code).toLowerCase(), sale.id);
-    saleIds.set(text(sale.name).toLowerCase(), sale.id);
+    saleIds.set(nameKey(sale.sale_code), sale.id);
+    saleIds.set(nameKey(sale.name), sale.id);
   });
   const teamIds = new Map<string, string>();
   teams.rows.forEach((team) => {
-    teamIds.set(text(team.code).toLowerCase(), team.id);
-    teamIds.set(text(team.name).toLowerCase(), team.id);
+    teamIds.set(nameKey(team.code), team.id);
+    teamIds.set(nameKey(team.name), team.id);
   });
+  const hitOwner = new Map<string, string>(hits.rows.map((hit) => [`${hit.kind}:${hit.value}`, hit.customer_id]));
 
-  // The source can have multiple historical rows for one customer code. An
-  // INSERT ... ON CONFLICT statement may update each target at most once, so
-  // retain the latest row from this delivery for every customer identity.
-  const rowsByCustomerCode = new Map<string, PendingGoogleSheetRow>();
-  for (const pendingRow of validRows) {
-    const code = boundedKey(pendingRow.row.ma_khach_hang || pendingRow.row.so_dien_thoai);
-    rowsByCustomerCode.set(code, pendingRow);
+  interface Entity {
+    id: string;
+    isNew: boolean;
+    phones: string[];
+    code: string | null;
+    row: Record<string, string>;
+  }
+  const entities = new Map<string, Entity>();
+  const newEntityByIdentifier = new Map<string, Entity>();
+
+  for (const { row, signals } of validRows) {
+    const rowHits = [
+      ...signals.phones.flatMap((value) => (hitOwner.has(`PHONE:${value}`) ? [{ kind: 'PHONE' as const, value, customer_id: hitOwner.get(`PHONE:${value}`)! }] : [])),
+      ...(signals.code && hitOwner.has(`CODE:${signals.code}`) ? [{ kind: 'CODE' as const, value: signals.code, customer_id: hitOwner.get(`CODE:${signals.code}`)! }] : []),
+    ];
+    const resolved = chooseCustomer(signals, rowHits);
+    let entity: Entity | undefined;
+    if (resolved.customerId) {
+      entity = entities.get(resolved.customerId);
+      if (!entity) {
+        entity = { id: resolved.customerId, isNew: false, phones: [], code: null, row };
+        entities.set(entity.id, entity);
+      }
+    } else {
+      entity = [...signals.phones.map((value) => `PHONE:${value}`), ...(signals.code ? [`CODE:${signals.code}`] : [])]
+        .map((key) => newEntityByIdentifier.get(key))
+        .find(Boolean);
+      if (!entity) {
+        // Same id scheme as before (code, else phone) so existing links stay valid.
+        const id = boundedKey(signals.code ? text(row.ma_khach_hang) : signals.phones[0]);
+        entity = entities.get(id) ?? { id, isNew: true, phones: [], code: null, row };
+        entities.set(id, entity);
+      }
+    }
+    for (const phone of signals.phones) if (!entity.phones.includes(phone)) entity.phones.push(phone);
+    if (signals.code && !entity.code) entity.code = signals.code;
+    entity.row = row; // the latest row of this delivery wins
+    if (entity.isNew) {
+      entity.phones.forEach((phone) => newEntityByIdentifier.set(`PHONE:${phone}`, entity!));
+      if (entity.code) newEntityByIdentifier.set(`CODE:${entity.code}`, entity);
+    }
   }
 
-  const parameters: unknown[] = [];
-  const valueGroups = [...rowsByCustomerCode.entries()].map(([code, { row }], index) => {
-    const base = index * 7;
-    parameters.push(
-      code,
-      row.ten_kh,
-      primaryGoogleSheetPhone(row.so_dien_thoai),
-      boundedText(row.nguon_khach_hang, 100) || null,
-      dateOrNow(row.thoi_gian),
-      saleIds.get(text(row.nguoi_phu_trach).toLowerCase()) || null,
-      teamIds.get(text(row.team).toLowerCase()) || null
+  const existing = [...entities.values()].filter((entity) => !entity.isNew);
+  const created = [...entities.values()].filter((entity) => entity.isNew);
+  stats.customersMatched += existing.length;
+  stats.customersCreated += created.length;
+
+  const columns = (list: Entity[]) => {
+    const ownerCells = list.map((entity) => text(entity.row.nguoi_phu_trach));
+    const teamCells = list.map((entity) => text(entity.row.team));
+    const saleResolved = ownerCells.map((cell) => saleIds.get(nameKey(cell)) ?? null);
+    stats.ownerUnresolved += ownerCells.filter((cell, index) => cell && !saleResolved[index]).length;
+    return {
+      ids: list.map((entity) => entity.id),
+      names: list.map((entity) => text(entity.row.ten_kh)),
+      phones: list.map((entity) => entity.phones[0] ?? primaryGoogleSheetPhone(entity.row.so_dien_thoai)),
+      channels: list.map((entity) => boundedText(entity.row.nguon_khach_hang, 100) || null),
+      firstSeen: list.map((entity) => dateOrNow(entity.row.thoi_gian, stats)),
+      saleIds: saleResolved,
+      teamIds: teamCells.map((cell) => teamIds.get(nameKey(cell)) ?? null),
+      ownerBlank: ownerCells.map((cell) => !cell),
+      teamBlank: teamCells.map((cell) => !cell),
+    };
+  };
+
+  if (existing.length > 0) {
+    const c = columns(existing);
+    await client.query(
+      `UPDATE customers cu SET
+         name = v.name, phone = COALESCE(v.phone, cu.phone), channel = v.channel,
+         current_sale_id = CASE WHEN v.sale_id IS NOT NULL THEN v.sale_id WHEN v.owner_blank THEN NULL ELSE cu.current_sale_id END,
+         current_team_id = CASE WHEN v.team_id IS NOT NULL THEN v.team_id WHEN v.team_blank THEN NULL ELSE cu.current_team_id END
+       FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[], $8::boolean[])
+         AS v(id, name, phone, channel, sale_id, team_id, owner_blank, team_blank)
+       WHERE cu.id = v.id`,
+      [c.ids, c.names, c.phones, c.channels, c.saleIds, c.teamIds, c.ownerBlank, c.teamBlank]
     );
-    return `($${base + 1}, $${base + 1}, $${base + 2}, $${base + 3}, NULL, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
-  });
+  }
+  if (created.length > 0) {
+    const c = columns(created);
+    await client.query(
+      `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
+       SELECT v.id, v.id, v.name, v.phone, NULL, v.channel, v.first_seen, v.sale_id, v.team_id
+       FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::timestamptz[], $6::text[], $7::text[])
+         AS v(id, name, phone, channel, first_seen, sale_id, team_id)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name, phone = COALESCE(EXCLUDED.phone, customers.phone), channel = EXCLUDED.channel,
+         current_sale_id = COALESCE(EXCLUDED.current_sale_id, customers.current_sale_id),
+         current_team_id = COALESCE(EXCLUDED.current_team_id, customers.current_team_id)`,
+      [c.ids, c.names, c.phones, c.channels, c.firstSeen, c.saleIds, c.teamIds]
+    );
+  }
 
-  await client.query(
-    `INSERT INTO customers (id, code, name, phone, company, channel, first_seen_date, current_sale_id, current_team_id)
-     VALUES ${valueGroups.join(', ')}
-     ON CONFLICT (code) DO UPDATE SET
-       name = EXCLUDED.name, phone = EXCLUDED.phone, channel = EXCLUDED.channel,
-       current_sale_id = EXCLUDED.current_sale_id, current_team_id = EXCLUDED.current_team_id`,
-    parameters
-  );
+  const kinds: string[] = [];
+  const values: string[] = [];
+  const owners: string[] = [];
+  for (const entity of entities.values()) {
+    for (const phone of entity.phones) { kinds.push('PHONE'); values.push(phone); owners.push(entity.id); }
+    if (entity.code) { kinds.push('CODE'); values.push(entity.code); owners.push(entity.id); }
+  }
+  if (values.length > 0) {
+    const bound = await client.query(
+      `WITH ins AS (
+         INSERT INTO customer_identifiers (kind, value, customer_id, source)
+         SELECT k, v, c, 'CRM' FROM unnest($1::text[], $2::text[], $3::text[]) AS t(k, v, c)
+         ON CONFLICT (kind, value) DO NOTHING RETURNING 1
+       )
+       SELECT (SELECT COUNT(*) FROM ins)::int AS bound,
+              (SELECT COUNT(*) FROM customer_identifiers i
+                 JOIN unnest($1::text[], $2::text[], $3::text[]) AS t(k, v, c) ON i.kind = t.k AND i.value = t.v
+                WHERE i.customer_id <> t.c)::int AS conflicts`,
+      [kinds, values, owners]
+    );
+    stats.identifiersBound += bound.rows[0].bound;
+    stats.identityConflicts += bound.rows[0].conflicts;
+  }
 
-  const validSet = new Set(validRows);
-  return rows.map((pendingRow) => validSet.has(pendingRow));
+  const validSet = new Set(validRows.map((item) => item.row));
+  return rows.map(({ row }) => validSet.has(row));
 }
 
 async function applyOperationalRows(
   client: pg.PoolClient,
   sheetName: string,
-  rows: PendingGoogleSheetRow[]
+  rows: PendingGoogleSheetRow[],
+  stats: IdentityStats
 ): Promise<boolean[]> {
   // Retried batches can contain only rows that are already recorded in the
   // row-state table. Do not generate an empty INSERT ... VALUES ON CONFLICT.
@@ -413,10 +553,16 @@ async function applyOperationalRows(
 
   const normalizedSheetName = normalizeGoogleSheetHeader(sheetName);
   if (normalizedSheetName === 'data_customers' || normalizedSheetName === 'tonghopkhachhang') {
-    return applyCustomerRows(client, rows);
+    const handled = await applyCustomerRows(client, rows, stats);
+    // New customers may be the missing half of earlier unmatched quotations/orders.
+    stats.reconciled += await reconcileUnmatchedTransactions(
+      client,
+      (unmatchedSheet, unmatchedRow) => applyOperationalRow(client, unmatchedSheet, unmatchedRow, stats)
+    );
+    return handled;
   }
   const handled: boolean[] = [];
-  for (const { row } of rows) handled.push(await applyOperationalRow(client, sheetName, row));
+  for (const { row } of rows) handled.push(await applyOperationalRow(client, sheetName, row, stats));
   return handled;
 }
 
@@ -458,7 +604,10 @@ export async function syncGoogleSheetWebhook(
 
   const runId = `GSS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const headers = payload.headers.map(text);
+  const stats = newIdentityStats();
 
+  // DDL/seeding must not run inside the delivery transaction (see ensure*).
+  await ensureCustomerIdentitySchema(client);
   await client.query('BEGIN');
   try {
     const inserted = await client.query(
@@ -488,17 +637,19 @@ export async function syncGoogleSheetWebhook(
     );
     const existingHashes = new Map(existing.rows.map((row) => [row.source_row_key, row.content_hash]));
     const changedRows = normalizedRows.filter((row) => existingHashes.get(row.rowKey) !== row.hash);
-    const handledRows = await applyOperationalRows(client, payload.sheetName, changedRows);
+    const handledRows = await applyOperationalRows(client, payload.sheetName, changedRows, stats);
     await upsertGoogleSheetRowState(client, payload.sourceId, payload.sheetName, changedRows);
     const appliedRows = handledRows.filter(Boolean).length;
     const skippedRows = payload.rows.length - appliedRows;
 
     await client.query(
-      `UPDATE google_sheet_sync_runs SET status = 'COMPLETED', completed_at = NOW(), applied_rows = $1, skipped_rows = $2 WHERE id = $3`,
-      [appliedRows, skippedRows, runId]
+      `UPDATE google_sheet_sync_runs SET status = 'COMPLETED', completed_at = NOW(), applied_rows = $1, skipped_rows = $2,
+         metadata = metadata || jsonb_build_object('identity', $4::jsonb)
+       WHERE id = $3`,
+      [appliedRows, skippedRows, runId, JSON.stringify(stats)]
     );
     await client.query('COMMIT');
-    return { duplicate: false, totalRows: payload.rows.length, appliedRows, skippedRows, runId };
+    return { duplicate: false, totalRows: payload.rows.length, appliedRows, skippedRows, runId, identity: stats };
   } catch (error) {
     await client.query('ROLLBACK');
     const message = error instanceof Error ? error.message : 'Unknown Google Sheets sync error';
