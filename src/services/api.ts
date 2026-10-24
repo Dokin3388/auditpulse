@@ -1,3 +1,4 @@
+import { dedupeByCode } from './queueFilters.ts';
 import type {
   AuditQueueItem,
   AuditorAssignment,
@@ -181,7 +182,7 @@ const riskTagLabels: Record<RiskTagCode, string> = {
 
 function normalizeRiskTags(input: unknown): RiskTag[] {
   if (!Array.isArray(input)) return [];
-  return input.flatMap((tag): RiskTag[] => {
+  return dedupeByCode(input.flatMap((tag): RiskTag[] => {
     if (typeof tag === 'string' && tag in riskTagLabels) {
       const code = tag as RiskTagCode;
       return [{ code, label: riskTagLabels[code], description: '', detectedAt: new Date().toISOString() }];
@@ -190,7 +191,7 @@ function normalizeRiskTags(input: unknown): RiskTag[] {
       return [tag as RiskTag];
     }
     return [];
-  });
+  }));
 }
 
 export async function getAuditQueue(): Promise<AuditQueueItem[]> {

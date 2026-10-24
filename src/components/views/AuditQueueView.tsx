@@ -14,6 +14,7 @@ import {
 import { QueueStatusBadge, RiskTagBadge } from '../common/Badge';
 import { AuditCaseDetailModal } from './AuditCaseDetailModal';
 import { Modal } from '../common/Modal';
+import { auditorFilterValue, matchesAuditorFilter, matchesStatusFilter, UNASSIGNED_FILTER } from '../../services/queueFilters.ts';
 
 interface AuditQueueViewProps {
   onNavigateToAction?: (actionId: string) => void;
@@ -100,14 +101,8 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       // Audit date
       if (effectiveAuditDate && item.auditDate.slice(0, 10) !== effectiveAuditDate) return false;
 
-      // Auditor
-      if (selectedAuditor !== 'ALL') {
-        if (selectedAuditor === 'UNASSIGNED') {
-          if (item.assignedAuditorId !== null) return false;
-        } else if (item.assignedAuditorId !== selectedAuditor) {
-          return false;
-        }
-      }
+      // Auditor (queue rows carry the auditor code, not the login id)
+      if (!matchesAuditorFilter(item.assignedAuditorId, selectedAuditor)) return false;
 
       // Tag
       if (selectedTag !== 'ALL') {
@@ -116,7 +111,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       }
 
       // Status
-      if (selectedStatus !== 'ALL' && item.status !== selectedStatus) return false;
+      if (!matchesStatusFilter(item.status, selectedStatus)) return false;
 
       return true;
     });
@@ -133,7 +128,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const handleOpenReassign = (item: AuditQueueItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setReassignItem(item);
-    setNewAuditorId(item.assignedAuditorId || auditorOptions[0]?.id || '');
+    setNewAuditorId(item.assignedAuditorId || auditorOptions[0]?.auditorId || '');
     setReassignReason('');
   };
 
@@ -169,7 +164,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
       list.push(`Team: ${t ? t.name : selectedTeam}`);
     }
     if (selectedAuditor !== 'ALL') {
-      const a = auditorOptions.find((x) => x.id === selectedAuditor);
+      const a = auditorOptions.find((x) => auditorFilterValue(x) === selectedAuditor);
       list.push(`Auditor: ${a ? a.name : selectedAuditor}`);
     }
     if (selectedTag !== 'ALL') list.push(`Loại: ${selectedTag}`);
@@ -295,11 +290,11 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             >
               <option value="ALL">Tất cả Auditor</option>
               {auditorOptions.map((auditor) => (
-                <option key={auditor.id} value={auditor.id}>
+                <option key={auditor.id} value={auditorFilterValue(auditor)}>
                   {auditor.name}
                 </option>
               ))}
-              <option value="UNASSIGNED">Chưa phân công</option>
+              <option value={UNASSIGNED_FILTER}>Chưa phân công</option>
             </select>
           </div>
 
@@ -311,11 +306,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <select
               value={selectedTag}
               onChange={(e) => {
-                const nextTag = e.target.value;
-                setSelectedTag(nextTag);
-                if (nextTag !== 'ALL') {
-                  setSelectedAuditDate('__ALL__');
-                }
+                setSelectedTag(e.target.value);
               }}
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
