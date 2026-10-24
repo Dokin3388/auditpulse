@@ -321,7 +321,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             >
               <option value="ALL">Tất cả cảnh báo</option>
               <option value="NO_QUOTATION">Khách mới 7 ngày chưa báo giá</option>
-              <option value="QUOTED_NOT_ORDERED">Báo giá 30 ngày chưa có đơn</option>
+              <option value="QUOTED_NOT_ORDERED">Báo giá 14 ngày chưa có đơn</option>
               <option value="YESTERDAY_CUSTOMERS">Khách tạo hôm qua</option>
             </select>
           </div>

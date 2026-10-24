@@ -40,18 +40,18 @@ async function withFixtures(run: (f: F, c: pg.PoolClient) => Promise<void>) {
     await cust('OLDNOQUOTE', '2026-09-01T03:00:00Z', f.sale);   // old, never quoted
     await cust('TWODAYS', '2026-10-22T03:00:00Z', f.sale);      // created 2 days ago, never quoted
     await cust('RECENT', '2026-10-20T03:00:00Z', f.sale);       // 4 days old, never quoted
-    await cust('STALEQUOTE', '2026-07-01T03:00:00Z', f.sale);   // quoted long ago, no order
-    await cust('QUOTED', '2026-09-01T03:00:00Z', f.sale);       // quoted, no order
+    await cust('STALEQUOTE', '2026-07-01T03:00:00Z', f.sale);   // quoted 15 days ago (just outside the window), no order
+    await cust('QUOTED', '2026-09-01T03:00:00Z', f.sale);       // quoted exactly 14 days ago (edge, inside), no order
     await cust('ORDERED', '2026-09-01T03:00:00Z', f.sale);      // quoted + valid order
     await cust('TODAY', '2026-10-24T03:00:00Z', f.sale);        // created on audit day itself
     await cust('NOOWNER', '2026-09-01T03:00:00Z', null);        // no sale -> cannot be queued
     const quote = (n: string, date: string) =>
       c.query(`INSERT INTO quotations (id, code, customer_id, sale_id, quote_date, total_amount, status) VALUES ($1,$1,$2,$3,$4::timestamptz,1000,'PENDING')`,
         [`Q-${tag}-${n}`, f.ids[n], f.sale, date]);
-    await quote('QUOTED', '2026-10-01T03:00:00Z');
-    await quote('STALEQUOTE', '2026-08-01T03:00:00Z');
-    await quote('ORDERED', '2026-10-01T03:00:00Z');
-    await c.query(`INSERT INTO sales_orders (id, code, customer_id, sale_id, order_date, total_amount, status) VALUES ($1,$1,$2,$3,'2026-10-05T03:00:00Z',1000,'VALID')`,
+    await quote('QUOTED', '2026-10-10T03:00:00Z');
+    await quote('STALEQUOTE', '2026-10-09T03:00:00Z');
+    await quote('ORDERED', '2026-10-12T03:00:00Z');
+    await c.query(`INSERT INTO sales_orders (id, code, customer_id, sale_id, order_date, total_amount, status) VALUES ($1,$1,$2,$3,'2026-10-13T03:00:00Z',1000,'VALID')`,
       [`O-${tag}-ORDERED`, f.ids.ORDERED, f.sale]);
     await run(f, c);
   } finally {
@@ -97,7 +97,7 @@ liveTest('Daily rules: yesterday customers + no quotation + quoted-not-ordered l
     assert.equal(byId.OLDNOQUOTE, undefined, 'never-quoted customers older than 7 days leave the daily queue');
     assert.deepEqual(byId.RECENT, ['NO_QUOTATION']);
     assert.deepEqual(byId.TWODAYS, ['NO_QUOTATION'], 'only customers created exactly yesterday get the yesterday tag');
-    assert.equal(byId.STALEQUOTE, undefined, 'quotations older than 30 days are not chased any more');
+    assert.equal(byId.STALEQUOTE, undefined, 'a quotation from D-15 is outside the 14-day window');
     assert.deepEqual(byId.QUOTED, ['QUOTED_NOT_ORDERED']);
     assert.equal(byId.ORDERED, undefined, 'customer with quote AND valid order is not at risk');
     assert.equal(byId.TODAY, undefined, 'customer created on the audit day itself is not in that day yet');
