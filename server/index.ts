@@ -24,6 +24,12 @@ import {
   parseCreateInput,
   toAssignmentError,
 } from './services/assignments.ts';
+import {
+  AUDIT_DATE_PATTERN,
+  materializeQueueForDate,
+  recentAuditDates,
+  vietnamBusinessDate,
+} from './services/queueMaterializer.ts';
 import type { RecheckResult, CorrectiveActionStatus } from '../src/types/index.ts';
 import { auth } from './auth.ts';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
@@ -362,7 +368,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
           ELSE q.status
         END AS status,
         (
-          CASE WHEN c.first_seen_date::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
+          CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
             THEN jsonb_build_array(jsonb_build_object(
               'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách trong 2 ngày trước',
               'description', 'Khách được ghi nhận trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
@@ -370,24 +376,24 @@ app.get('/api/queue', async (req: Request, res: Response) => {
           || CASE WHEN NOT EXISTS (
             SELECT 1 FROM quotations qt
             WHERE qt.customer_id = q.customer_id
-              AND qt.quote_date::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
+              AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date - 1
           ) THEN jsonb_build_array(jsonb_build_object(
             'code', 'NO_QUOTATION', 'label', 'Chưa báo giá',
-            'description', 'Không có báo giá trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
+            'description', 'Chưa có báo giá nào tính đến D-1.', 'detectedAt', q.audit_date::text
           )) ELSE '[]'::jsonb END
           || CASE WHEN EXISTS (
             SELECT 1 FROM quotations qt
             WHERE qt.customer_id = q.customer_id
-              AND qt.quote_date::date BETWEEN q.audit_date - 7 AND q.audit_date - 1
+              AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date - 1
               AND NOT EXISTS (
                 SELECT 1 FROM sales_orders so
                 WHERE so.customer_id = q.customer_id AND so.status = 'VALID'
-                  AND so.order_date::date >= qt.quote_date::date
-                  AND so.order_date::date <= q.audit_date
+                  AND (so.order_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+                  AND (so.order_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date
               )
           ) THEN jsonb_build_array(jsonb_build_object(
             'code', 'QUOTED_NOT_ORDERED', 'label', 'Báo giá chưa chốt',
-            'description', 'Có báo giá trong 7 ngày nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
+            'description', 'Có báo giá nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
           )) ELSE '[]'::jsonb END
           || COALESCE(q.risk_tags, '[]'::jsonb)
         ) AS "riskTags",
@@ -422,234 +428,49 @@ app.get('/api/queue', async (req: Request, res: Response) => {
   }
 });
 
-// Promote source issue logs into one review queue item per unique customer/day.
-// This is deliberately separate from action creation: an auditor still has to
-// review the source finding before a corrective action exists.
+// Promote customers matching the daily rules (and optional issue-log rows) into one review
+// queue item per customer/day. Idempotent; see server/services/queueMaterializer.ts.
 app.post('/api/queue/materialize-from-issue-logs', async (req: Request, res: Response) => {
   try {
-    const requestedAuditDate = typeof req.body?.auditDate === 'string' ? req.body.auditDate : '';
-    const auditDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedAuditDate)
-      ? requestedAuditDate
-      : null;
-    const result = await withTransaction(async (client) => {
-      const [sourceRows, sourceRuleRows, customers, sales, assignments] = await Promise.all([
-        client.query<{ payload: Record<string, string> }>(
-          `SELECT payload FROM google_sheet_row_state
-           WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
-        ),
-        // Build today's operational queue directly from the uploaded CRM/ERP
-        // tables. The issue-log sheet is optional enrichment, not the source
-        // of truth for whether a customer needs review.
-        client.query<{
-          auditDate: string;
-          customerId: string;
-          customerName: string;
-          phone: string | null;
-          saleId: string;
-          saleName: string;
-          teamId: string;
-          teamName: string;
-          ruleCodes: string[];
-        }>(`
-          WITH p AS (
-            SELECT COALESCE($1::date, (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) AS audit_date
-          ), candidates AS (
-            SELECT
-              p.audit_date::text AS "auditDate",
-              c.id AS "customerId", c.name AS "customerName", c.phone,
-              COALESCE(c.current_sale_id, latest_quote_owner.sale_id, latest_order_owner.sale_id) AS "saleId", u.name AS "saleName",
-              COALESCE(c.current_team_id, sp.team_id) AS "teamId", t.name AS "teamName",
-              ARRAY_REMOVE(ARRAY[
-                CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1 THEN 'YESTERDAY_CUSTOMERS' END,
-                CASE WHEN c.first_seen_date::date BETWEEN p.audit_date - 2 AND p.audit_date - 1
-                       AND NOT EXISTS (
-                         SELECT 1 FROM quotations q0
-                         WHERE q0.customer_id = c.id
-                           AND q0.quote_date::date <= p.audit_date - 1
-                       ) THEN 'NO_QUOTATION' END,
-                CASE WHEN EXISTS (
-                         SELECT 1 FROM quotations q1
-                         WHERE q1.customer_id = c.id
-                           AND q1.quote_date::date BETWEEN p.audit_date - 7 AND p.audit_date - 1
-                           AND NOT EXISTS (
-                             SELECT 1 FROM sales_orders so
-                             WHERE so.customer_id = c.id AND so.status = 'VALID'
-                               AND so.order_date::date >= q1.quote_date::date
-                               AND so.order_date::date <= p.audit_date - 1
-                           )
-                       ) THEN 'QUOTED_NOT_ORDERED' END
-              ]::text[], NULL) AS "ruleCodes"
-            FROM customers c
-            LEFT JOIN LATERAL (
-              SELECT q.sale_id
-              FROM quotations q
-              WHERE q.customer_id = c.id
-              ORDER BY q.quote_date DESC
-              LIMIT 1
-            ) latest_quote_owner ON true
-            LEFT JOIN LATERAL (
-              SELECT so.sale_id
-              FROM sales_orders so
-              WHERE so.customer_id = c.id
-              ORDER BY so.order_date DESC
-              LIMIT 1
-            ) latest_order_owner ON true
-            JOIN app_users u
-              ON u.id = COALESCE(c.current_sale_id, latest_quote_owner.sale_id, latest_order_owner.sale_id)
-             AND u.role = 'SALE'
-            JOIN sales_profiles sp ON sp.id = u.id
-            JOIN teams t ON t.id = COALESCE(c.current_team_id, sp.team_id)
-            CROSS JOIN p
-          )
-          SELECT * FROM candidates WHERE cardinality("ruleCodes") > 0
-        `, [auditDate]),
-        client.query<{ id: string; code: string; name: string; phone: string | null }>(
-          `SELECT id, code, name, phone FROM customers`
-        ),
-        client.query<{ id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>(
-          `SELECT u.id, u.name, sp.sale_code AS "saleCode", sp.team_id AS "teamId", t.name AS "teamName"
-           FROM app_users u JOIN sales_profiles sp ON sp.id = u.id
-           LEFT JOIN teams t ON t.id = sp.team_id
-           WHERE u.role = 'SALE'`
-        ),
-        client.query<{ saleId: string; auditorId: string; effectiveFrom: string; effectiveTo: string | null; auditorName: string; auditorTeam: string | null }>(
-          `SELECT a.sale_id AS "saleId", a.auditor_id AS "auditorId",
-                  a.effective_from::text AS "effectiveFrom", a.effective_to::text AS "effectiveTo",
-                  u.name AS "auditorName", NULL::text AS "auditorTeam"
-           FROM auditor_assignments a JOIN app_users u ON u.id = a.auditor_id
-           WHERE a.is_active = true`
-        ),
-      ]);
-
-      const normalizeLookupKey = (value: string) => {
-        const trimmed = value.trim().toLowerCase();
-        if (/^\d+$/.test(trimmed)) return trimmed.replace(/^0+/, '') || '0';
-        return trimmed.replace(/\s+/g, ' ');
-      };
-      const byCustomer = new Map<string, { id: string; name: string; phone: string | null }>();
-      for (const customer of customers.rows) {
-        for (const key of [customer.code, customer.phone, customer.name]) {
-          if (key?.trim()) byCustomer.set(normalizeLookupKey(key), customer);
-        }
-      }
-      const bySale = new Map<string, { id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>();
-      for (const sale of sales.rows) {
-        for (const key of [sale.name, sale.saleCode]) {
-          if (key?.trim()) bySale.set(key.trim().toLowerCase(), sale);
-        }
-      }
-      type Group = {
-        date: string;
-        customer: { id: string; name: string; phone: string | null };
-        sale: { id: string; name: string };
-        team: { id: string; name: string };
-        issueCodes: Set<string>;
-      };
-      const groups = new Map<string, Group>();
-      let skipped = 0;
-
-      for (const sourceRule of sourceRuleRows.rows) {
-        const key = `${sourceRule.auditDate}|${sourceRule.customerId}`;
-        groups.set(key, {
-          date: sourceRule.auditDate,
-          customer: { id: sourceRule.customerId, name: sourceRule.customerName, phone: sourceRule.phone },
-          sale: { id: sourceRule.saleId, name: sourceRule.saleName },
-          team: { id: sourceRule.teamId, name: sourceRule.teamName },
-          issueCodes: new Set(sourceRule.ruleCodes),
-        });
-      }
-
-      for (const sourceRow of sourceRows.rows) {
-        const row = sourceRow.payload || {};
-        const date = String(row.date || '').trim().slice(0, 10);
-        const customerKey = normalizeLookupKey(String(row.sdt || row.ma_khach_hang || row.khach || ''));
-        const saleKey = String(row.sale || row.sale_name || row.ten_sale || '').trim().toLowerCase();
-        const customer = byCustomer.get(customerKey);
-        const sale = bySale.get(saleKey);
-        // Team ownership is canonical in data_sale/sales_profiles. The issue
-        // log may contain an old or mistyped team label, so never let it
-        // overwrite the current master assignment.
-        const team = sale?.teamId && sale.teamName ? { id: sale.teamId, name: sale.teamName } : undefined;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !customer || !sale || !team) {
-          skipped += 1;
-          continue;
-        }
-        const key = `${date}|${customer.id}`;
-        const group = groups.get(key) || {
-          date,
-          customer,
-          sale,
-          team,
-          issueCodes: new Set<string>(),
-        };
-        const issueCode = String(row.issue_code || row.ma_loi || '').trim();
-        if (issueCode) group.issueCodes.add(issueCode);
-        groups.set(key, group);
-      }
-
-      const runIds = new Set<string>();
-      let created = 0;
-      for (const group of groups.values()) {
-        const runId = `RUN-AUTO-${group.date.replaceAll('-', '')}`;
-        runIds.add(runId);
-        await client.query(
-          `INSERT INTO audit_queue_runs (id, run_date, rule_version, total_items, status)
-           VALUES ($1, $2, 'auto-rules-v1', 0, 'COMPLETED')
-           ON CONFLICT (id) DO NOTHING`,
-          [runId, group.date]
-        );
-        const assignment = assignments.rows.find((item) => item.saleId === group.sale.id &&
-          item.effectiveFrom <= group.date && (!item.effectiveTo || item.effectiveTo >= group.date));
-        const queueId = `QUEUE-SHEET-${createHash('sha256').update(`${group.date}|${group.customer.id}`).digest('hex').slice(0, 24)}`;
-        const riskTags = JSON.stringify([...group.issueCodes].map((code) => ({ code, source: 'fact_issue_log' })));
-        const status = assignment ? 'ASSIGNED' : 'UNASSIGNED';
-        await client.query(
-          `INSERT INTO audit_queue_items (
-             id, queue_run_id, audit_date, customer_id, sale_id, team_id,
-             assigned_auditor_id, status, risk_tags, active_action_id, rule_version,
-             sync_timestamp, assigned_at, shared_work, snapshot_customer_name,
-             snapshot_sale_name, snapshot_team_name, snapshot_auditor_name
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'auto-rules-v1', NOW(), $10, false, $11, $12, $13, $14)
-           ON CONFLICT (audit_date, customer_id) DO UPDATE SET
-             risk_tags = EXCLUDED.risk_tags,
-             assigned_auditor_id = COALESCE(audit_queue_items.assigned_auditor_id, EXCLUDED.assigned_auditor_id),
-             assigned_at = COALESCE(audit_queue_items.assigned_at, EXCLUDED.assigned_at),
-             status = CASE WHEN audit_queue_items.status IN ('COMPLETED_PASS', 'COMPLETED_FAIL', 'SKIPPED')
-                           THEN audit_queue_items.status ELSE EXCLUDED.status END,
-             snapshot_sale_name = EXCLUDED.snapshot_sale_name,
-             team_id = EXCLUDED.team_id,
-             snapshot_team_name = EXCLUDED.snapshot_team_name,
-             snapshot_auditor_name = COALESCE(audit_queue_items.snapshot_auditor_name, EXCLUDED.snapshot_auditor_name),
-             sync_timestamp = NOW()`,
-          [
-            queueId,
-            runId,
-            group.date,
-            group.customer.id,
-            group.sale.id,
-            group.team.id,
-            assignment?.auditorId || null,
-            status,
-            riskTags,
-            assignment ? group.date : null,
-            group.customer.name,
-            group.sale.name,
-            group.team.name,
-            assignment?.auditorName || null,
-          ]
-        );
-        created += 1;
-      }
-      for (const runId of runIds) {
-        await client.query(`UPDATE audit_queue_runs SET total_items = (SELECT COUNT(*) FROM audit_queue_items WHERE queue_run_id = $1) WHERE id = $1`, [runId]);
-      }
-      return { sourceRows: sourceRows.rowCount ?? 0, queueItems: created, skipped, runCount: runIds.size };
-    });
+    const requested = typeof req.body?.auditDate === 'string' ? req.body.auditDate : '';
+    const auditDate = AUDIT_DATE_PATTERN.test(requested) ? requested : null;
+    const result = await withTransaction((client) => materializeQueueForDate(client, auditDate));
     res.status(201).json({ success: true, ...result });
   } catch (err: unknown) {
+    console.error('[queue] materialize failed:', err);
     const message = err instanceof Error ? err.message : 'Không thể tạo audit queue từ nhật ký lỗi.';
     res.status(500).json({ error: message });
   }
+});
+
+// Daily job (Vercel Cron, see vercel.json). Builds today's queue and re-checks the previous
+// days so a missed run or a late data sync self-heals. Fails closed without CRON_SECRET.
+app.get('/api/cron/materialize-queue', async (req: Request, res: Response) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: 'CRON_SECRET chưa được cấu hình trên máy chủ.' });
+    return;
+  }
+  const provided = Buffer.from(String(req.headers.authorization || ''));
+  const expected = Buffer.from(`Bearer ${secret}`);
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const days = Math.min(Math.max(Number(req.query.days) || 3, 1), 14);
+  const results: Array<Record<string, unknown>> = [];
+  for (const auditDate of recentAuditDates(vietnamBusinessDate(), days)) {
+    try {
+      const result = await withTransaction((client) => materializeQueueForDate(client, auditDate));
+      results.push({ ...result, ok: true });
+    } catch (err: unknown) {
+      console.error('[cron] materialize failed for', auditDate, err);
+      results.push({ auditDate, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  const failed = results.filter((r) => !r.ok).length;
+  res.status(failed ? 500 : 200).json({ success: failed === 0, results });
 });
 
 // ============================================================================
