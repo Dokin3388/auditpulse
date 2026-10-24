@@ -255,7 +255,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
             </span>
             {customerQuotes.length === 0 ? (
               <p className="text-xs text-slate-500 p-2.5 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
-                Không tìm thấy báo giá nào trong hệ thống CRM/ERP (Phù hợp rule Chưa báo giá 2 ngày).
+                Không tìm thấy báo giá nào trong hệ thống CRM/ERP (Phù hợp rule khách mới 7 ngày chưa báo giá).
               </p>
             ) : (
               <div className="space-y-1.5">

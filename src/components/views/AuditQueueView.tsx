@@ -320,9 +320,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
               <option value="ALL">Tất cả cảnh báo</option>
-              <option value="NO_QUOTATION">Chưa báo giá 2 ngày</option>
-              <option value="QUOTED_NOT_ORDERED">Chưa chốt đơn 7 ngày</option>
-              <option value="YESTERDAY_CUSTOMERS">Khách trong 2 ngày trước</option>
+              <option value="NO_QUOTATION">Khách mới 7 ngày chưa báo giá</option>
+              <option value="QUOTED_NOT_ORDERED">Báo giá 14 ngày chưa có đơn</option>
+              <option value="YESTERDAY_CUSTOMERS">Khách tạo hôm qua</option>
             </select>
           </div>
 

@@ -5,9 +5,9 @@
 // refreshes tags/assignments, never duplicates (unique audit_date + customer_id).
 //
 // Candidate rules for audit date D (all evaluated "as of the end of D-1"):
-//   YESTERDAY_CUSTOMERS  customer first seen between D-2 and D-1
+//   YESTERDAY_CUSTOMERS  customer first seen exactly on D-1 (yesterday, Vietnam calendar)
 //   NO_QUOTATION         customer first seen in D-7..D-1 and has NO quotation dated up to D-1
-//   QUOTED_NOT_ORDERED   customer has a quotation dated D-30..D-1 with no valid order since it
+//   QUOTED_NOT_ORDERED   customer has a quotation dated D-14..D-1 with no valid order since it
 // The windows keep the daily queue workable: without them every never-quoted customer
 // (13k+ in production) would be re-queued every single day.
 // Customers created after D-1 never appear on day D, so back-filling a past date does
@@ -61,7 +61,7 @@ export async function materializeRuleItems(client: pg.PoolClient, auditDate: str
          u.id AS sale_id, u.name AS sale_name,
          t.id AS team_id, t.name AS team_name,
          ARRAY_REMOVE(ARRAY[
-           CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN p.d - 2 AND p.d - 1 THEN 'YESTERDAY_CUSTOMERS' END,
+           CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = p.d - 1 THEN 'YESTERDAY_CUSTOMERS' END,
            CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= p.d - 7
                  AND NOT EXISTS (
                   SELECT 1 FROM quotations q0
@@ -70,7 +70,7 @@ export async function materializeRuleItems(client: pg.PoolClient, auditDate: str
            CASE WHEN EXISTS (
                   SELECT 1 FROM quotations q1
                   WHERE q1.customer_id = c.id AND (q1.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= p.d - 1
-                    AND (q1.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= p.d - 30
+                    AND (q1.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= p.d - 14
                     AND NOT EXISTS (
                       SELECT 1 FROM sales_orders so
                       WHERE so.customer_id = c.id AND so.status = 'VALID'

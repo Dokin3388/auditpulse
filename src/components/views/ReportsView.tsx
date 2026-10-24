@@ -82,10 +82,10 @@ export const ReportsView: React.FC = () => {
             <div className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between">
               <div>
                 <span className="font-medium text-slate-900 dark:text-slate-100 block">
-                  Tỷ lệ chưa báo giá 2 ngày (NO_QUOTATION)
+                  Tỷ lệ khách mới 7 ngày chưa báo giá (NO_QUOTATION)
                 </span>
                 <span className="text-[11px] text-slate-500">
-                  Số khách NO_QUOTATION / Cohort [D-2, D-1] có sale
+                  Số khách NO_QUOTATION / Cohort [D-7, D-1] có sale
                 </span>
               </div>
               <div className="text-right">
