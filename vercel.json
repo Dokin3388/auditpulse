@@ -6,6 +6,15 @@
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/materialize-queue",
+      "schedule": "10 17 * * *"
+    }
   ]
 }

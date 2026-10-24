@@ -228,7 +228,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       .then((items) => {
         if (!cancelled) setQueueItems(items);
       })
-      .catch(() => undefined);
+      // Never silent: a failed daily refresh is why "today" can look empty.
+      .catch((error: unknown) => console.error('[AuditPulse] Không cập nhật được Audit Queue hôm nay:', error));
 
     void Promise.allSettled([
       getAppUsers(),
