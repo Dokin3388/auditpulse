@@ -117,11 +117,45 @@ export function buildMergePlan(
   }
   const allEdges = [...unique.values()];
 
+  // A placeholder account (MISA code without a CRM record) can carry rows with
+  // several people's phones. When its phones reach two different real customer
+  // groups it is a bridge, not proof they are one person: keep it out entirely.
+  const isPlaceholder = (id: string) => byId.get(id)?.channel === 'HISTORICAL_TRANSACTION';
+  const realFinder = new UnionFind();
+  const realPhoneOwner = new Map<string, string>();
+  for (const edge of allEdges) {
+    if (edge.kind !== 'PHONE' || isPlaceholder(edge.customerId)) continue;
+    realFinder.find(edge.customerId);
+    const owner = realPhoneOwner.get(edge.value);
+    if (owner) realFinder.union(owner, edge.customerId);
+    else realPhoneOwner.set(edge.value, edge.customerId);
+  }
+  const bridges = new Set<string>();
+  const placeholderPhones = new Map<string, Set<string>>();
+  for (const edge of allEdges) {
+    if (edge.kind !== 'PHONE' || !isPlaceholder(edge.customerId)) continue;
+    if (!placeholderPhones.has(edge.customerId)) placeholderPhones.set(edge.customerId, new Set());
+    placeholderPhones.get(edge.customerId)!.add(edge.value);
+  }
+  const bridgeReview: Array<{ phones: string[]; customerIds: string[] }> = [];
+  for (const [id, phoneSet] of placeholderPhones) {
+    const roots = new Set<string>();
+    for (const phone of phoneSet) {
+      const owner = realPhoneOwner.get(phone);
+      if (owner) roots.add(realFinder.find(owner));
+    }
+    if (roots.size >= 2) {
+      bridges.add(id);
+      bridgeReview.push({ phones: [...phoneSet].slice(0, 10), customerIds: [id] });
+    }
+  }
+
   const finder = new UnionFind();
   const phoneOwner = new Map<string, string>();
   const phonesOf = new Map<string, Set<string>>();
   const codeCustomers = new Map<string, Set<string>>();
   for (const edge of allEdges) {
+    if (bridges.has(edge.customerId)) continue;
     if (edge.kind === 'PHONE') {
       finder.find(edge.customerId);
       const owner = phoneOwner.get(edge.value);
@@ -143,7 +177,7 @@ export function buildMergePlan(
   }
 
   const clusters: MergeClusterPlan[] = [];
-  const needsReview: MergePlan['needsReview'] = [];
+  const needsReview: MergePlan['needsReview'] = [...bridgeReview];
   for (const memberIds of groups.values()) {
     if (memberIds.length < 2) continue;
     const phones = [...new Set(memberIds.flatMap((id) => [...(phonesOf.get(id) ?? [])]))];
@@ -151,7 +185,8 @@ export function buildMergePlan(
       needsReview.push({ phones: phones.slice(0, 10), customerIds: memberIds.slice(0, 20) });
       continue;
     }
-    const ranked = rankCustomers(memberIds.map((id) => byId.get(id)!));
+    const members = memberIds.map((id) => byId.get(id)!);
+    const ranked = rankCustomers(members);
     const [winner, ...losers] = ranked;
     const ownerIds = new Set(ranked.map((c) => c.currentSaleId).filter(Boolean));
     clusters.push({

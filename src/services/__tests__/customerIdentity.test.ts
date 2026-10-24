@@ -138,3 +138,18 @@ test('buildMergePlan: a generic customer code shared by different people never m
   assert.equal(plan.totals.clusters, 0);
   assert.deepEqual(plan.sharedCodes, [{ code: 'KHACH LE', customers: 2 }]);
 });
+
+test('buildMergePlan: a placeholder account that bridges two real customers is left for review', () => {
+  const customers = [
+    customer('REAL-1', { phone: '0901111111' }),
+    customer('REAL-2', { phone: '0902222222' }),
+    customer('MISA-ACCOUNT', { channel: 'HISTORICAL_TRANSACTION', quotes: 4 }),
+  ];
+  const edges: IdentityEdge[] = [
+    phoneEdge('REAL-1', '0901111111'), phoneEdge('REAL-2', '0902222222'),
+    phoneEdge('MISA-ACCOUNT', '0901111111'), phoneEdge('MISA-ACCOUNT', '0902222222'),
+  ];
+  const plan = buildMergePlan(customers, edges, new Map());
+  assert.equal(plan.totals.clusters, 0);
+  assert.equal(plan.needsReview.length, 1);
+});
