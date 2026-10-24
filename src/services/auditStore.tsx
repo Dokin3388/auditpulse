@@ -46,11 +46,12 @@ import {
   todayInVietnam,
   getAuditorAssignments,
   getCorrectiveActions,
-  createAssignment,
+  createAssignments,
   getRescuedOrders,
   startActionRecheck,
   submitActionRecheck,
 } from './api';
+import { persistAssignments } from './assignmentFlow';
 
 export interface AuditStoreContextType {
   currentUser: UserProfile;
@@ -84,19 +85,20 @@ export interface AuditStoreContextType {
     evidence?: Evidence
   ) => { success: boolean; message: string };
   headAuditorWaiveAction: (actionId: string, reason: string) => { success: boolean; message: string };
+  /** Resolves only after the server committed and the state was reloaded from the server. */
   createAuditorAssignment: (
     saleId: string,
     auditorId: string,
     effectiveFrom: string,
-    reason: string,
-    effectiveTo?: string | null
-  ) => { success: boolean; message: string };
+    reason: string
+  ) => Promise<{ success: boolean; message: string }>;
   createAuditorAssignments: (
     saleIds: string[],
     auditorId: string,
     effectiveFrom: string,
     reason: string
-  ) => { success: boolean; message: string };
+  ) => Promise<{ success: boolean; message: string }>;
+  refreshAuditorAssignments: () => Promise<void>;
   getEffectiveAuditorForSale: (saleId: string, auditDate: string) => AuditorAssignment | undefined;
   approveIssueDefinition: (defId: string) => void;
   createAuditCaseForQueue: (
@@ -550,138 +552,98 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     return { success: true, message: `Action ${action.code} đã được miễn trừ hợp lệ.` };
   };
 
-  // AUDITOR PORTFOLIO FLOW: Create Auditor Assignment with Effective Dates (Spec v1.1 Section 3)
-  // Invariants enforced:
-  // 1. Only Head Auditor/Admin can modify assignments.
-  // 2. Future assignments do NOT prematurely close the current active assignment today.
-  // 3. Blocks overlap: a sale cannot have 2 active assignments on any given date.
-  // 4. Pre-existing queue items retain their snapshot assignedAuditorId.
-  const createAuditorAssignment = (
-    saleId: string,
-    auditorId: string,
+  // AUDITOR ASSIGNMENT FLOW (Spec v1.1 Section 3)
+  // Server-first: the UI NEVER shows an assignment as saved until the API has
+  // committed it and returned the rows it read back from PostgreSQL. On failure the
+  // state is left untouched and the real error is returned to the caller (the form
+  // keeps its data). On success the list is reloaded from the server, so what the
+  // user sees after a save is exactly what a hard refresh will show.
+  const refreshAuditorAssignments = async () => {
+    setAuditorAssignments(await getAuditorAssignments());
+  };
+
+  const saveAuditorAssignments = async (
+    saleRefs: string[],
+    auditorRef: string,
     effectiveFrom: string,
-    reason: string,
-    effectiveTo?: string | null
-  ) => {
+    reason: string
+  ): Promise<{ success: boolean; message: string }> => {
     if (currentUser.role !== 'HEAD_AUDITOR' && currentUser.role !== 'ADMIN') {
       return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có quyền điều chỉnh phân công Auditor.' };
     }
-
-    const sale = allUsers.find((u) => u.id === saleId || u.saleId === saleId);
-    const auditor = allUsers.find((u) => u.auditorId === auditorId);
-    const saleName = sale ? sale.name : 'Sale ' + saleId;
-    const auditorName = auditor ? auditor.name : 'Auditor ' + auditorId;
-    const teamName = sale?.teamName || 'B2B Team';
-
-    const resolution = resolveAssignmentChain(auditorAssignments, {
-      saleId,
-      saleName,
-      teamName,
-      auditorId,
-      auditorName,
-      effectiveFrom,
-      effectiveTo,
-      reason,
-      createdBy: currentUser.name,
-    });
-
-    if (!resolution.success) {
-      return { success: false, message: resolution.message };
-    }
-
-    if (resolution.updatedAssignments) setAuditorAssignments(resolution.updatedAssignments);
-    void createAssignment({ saleId, auditorId, effectiveFrom, reason }).catch((error: unknown) => {
-      setAuditorAssignments(auditorAssignments);
-      addTrailEvent('AUDITOR_ASSIGNMENT_SAVE_FAILED', `Phân công chưa lưu được lên Neon cho ${saleName}.`, error instanceof Error ? error.message : undefined);
-    });
-
-    // Clear any open team change alert for this sale
-    setTeamChangeAlerts((prev) =>
-      prev.map((alert) => (alert.saleId === saleId ? { ...alert, reviewed: true } : alert))
-    );
-
-    addTrailEvent(
-      'AUDITOR_ASSIGNMENT_UPDATED',
-      `Head Auditor phân công sale ${saleName} cho ${auditorName}. Hiệu lực từ ${effectiveFrom}.`,
-      `Lý do: ${reason}`
-    );
-
-    return {
-      success: true,
-      message: resolution.message,
-    };
-  };
-
-  // HEAD AUDITOR / ADMIN FLOW: rotate a portfolio in one atomic UI operation.
-  // A rotation keeps prior ownership as history; it never overwrites assignments.
-  const createAuditorAssignments = (
-    saleIds: string[],
-    auditorId: string,
-    effectiveFrom: string,
-    reason: string
-  ) => {
-    if (currentUser.role !== 'HEAD_AUDITOR' && currentUser.role !== 'ADMIN') {
-      return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có thể xoay vòng portfolio.' };
-    }
-
-    const uniqueSaleIds = [...new Set(saleIds)];
-    if (!uniqueSaleIds.length) {
+    const uniqueSaleRefs = [...new Set(saleRefs)];
+    if (!uniqueSaleRefs.length) {
       return { success: false, message: 'Hãy chọn ít nhất một sale để phân công.' };
     }
     if (!reason.trim()) {
       return { success: false, message: 'Bắt buộc ghi lý do phân công/luân chuyển để lưu audit trail.' };
     }
-
-    const auditor = allUsers.find((user) => user.auditorId === auditorId);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
+      return { success: false, message: 'Ngày hiệu lực không hợp lệ.' };
+    }
+    const auditor = allUsers.find((user) => user.role === 'AUDITOR' && (user.auditorId === auditorRef || user.id === auditorRef));
     if (!auditor) {
       return { success: false, message: 'Không tìm thấy Auditor được chọn.' };
     }
 
-    let plannedAssignments = auditorAssignments;
-    for (const saleId of uniqueSaleIds) {
-      const sale = allUsers.find((user) => user.id === saleId || user.saleId === saleId);
+    // Fast client-side pre-check against the last server snapshot (no state change).
+    // The server re-validates inside the transaction and remains the authority.
+    for (const saleRef of uniqueSaleRefs) {
+      const sale = allUsers.find((user) => user.role === 'SALE' && (user.id === saleRef || user.saleId === saleRef));
       if (!sale) {
-        return { success: false, message: `Không tìm thấy sale ${saleId}; không có thay đổi nào được lưu.` };
+        return { success: false, message: `Không tìm thấy sale ${saleRef}; không có thay đổi nào được lưu.` };
       }
-
-      const resolution = resolveAssignmentChain(plannedAssignments, {
-        saleId,
+      const check = resolveAssignmentChain(auditorAssignments, {
+        saleId: sale.id,
         saleName: sale.name,
         teamName: sale.teamName || 'Chưa có team',
-        auditorId,
+        auditorId: auditor.auditorId || auditor.id,
         auditorName: auditor.name,
         effectiveFrom,
         reason,
         createdBy: currentUser.name,
       });
-
-      if (!resolution.success || !resolution.updatedAssignments) {
-        return { success: false, message: `${sale.name}: ${resolution.message} Không có thay đổi nào được lưu.` };
+      if (!check.success) {
+        return { success: false, message: `${sale.name}: ${check.message} Không có thay đổi nào được lưu.` };
       }
-      plannedAssignments = resolution.updatedAssignments;
     }
 
-    setAuditorAssignments(plannedAssignments);
-    void Promise.all(uniqueSaleIds.map((saleId) => createAssignment({ saleId, auditorId, effectiveFrom, reason }))).catch((error: unknown) => {
-      setAuditorAssignments(auditorAssignments);
-      addTrailEvent('AUDITOR_ASSIGNMENT_SAVE_FAILED', 'Phân công portfolio chưa lưu được lên Neon.', error instanceof Error ? error.message : undefined);
-    });
+    const outcome = await persistAssignments(
+      { create: createAssignments, reload: getAuditorAssignments },
+      { saleIds: uniqueSaleRefs, auditorId: auditor.id, effectiveFrom, reason },
+      auditorAssignments
+    );
+    if (!outcome.success) {
+      // Nothing was saved: state stays exactly as the server last reported it.
+      addTrailEvent(
+        'AUDITOR_ASSIGNMENT_SAVE_FAILED',
+        `Phân công chưa lưu được cho ${uniqueSaleRefs.length} sale.`,
+        outcome.message
+      );
+      return { success: false, message: outcome.message };
+    }
+
+    setAuditorAssignments(outcome.assignments);
+    void getAuditQueue().then(setQueueItems).catch(() => undefined);
+    const saved = { assignments: outcome.saved, message: outcome.message };
+
+    const savedSaleIds = new Set(saved.assignments.map((row) => row.saleId));
     setTeamChangeAlerts((previous) =>
-      previous.map((alert) =>
-        uniqueSaleIds.includes(alert.saleId) ? { ...alert, reviewed: true } : alert
-      )
+      previous.map((alert) => (savedSaleIds.has(alert.saleId) ? { ...alert, reviewed: true } : alert))
     );
     addTrailEvent(
-      'AUDITOR_PORTFOLIO_ROTATED',
-      `Head Auditor phân công ${uniqueSaleIds.length} sale cho ${auditor.name}, hiệu lực từ ${effectiveFrom}.`,
-      `Lý do: ${reason}. Sale: ${uniqueSaleIds.join(', ')}`
+      'AUDITOR_ASSIGNMENT_UPDATED',
+      `Head Auditor phân công ${saved.assignments.length} sale cho ${auditor.name}, hiệu lực từ ${effectiveFrom}.`,
+      `Lý do: ${reason}`
     );
-
-    return {
-      success: true,
-      message: `Đã lưu phân công cho ${uniqueSaleIds.length} sale. Phân công cũ được chốt tự động đến ngày trước ${effectiveFrom}.`,
-    };
+    return { success: true, message: saved.message };
   };
+
+  const createAuditorAssignment = (saleId: string, auditorId: string, effectiveFrom: string, reason: string) =>
+    saveAuditorAssignments([saleId], auditorId, effectiveFrom, reason);
+
+  const createAuditorAssignments = (saleIds: string[], auditorId: string, effectiveFrom: string, reason: string) =>
+    saveAuditorAssignments(saleIds, auditorId, effectiveFrom, reason);
 
   // Effective auditor resolution helper
   const getEffectiveAuditorForSale = (saleId: string, auditDate: string): AuditorAssignment | undefined => {
@@ -966,6 +928,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
         headAuditorWaiveAction,
         createAuditorAssignment,
         createAuditorAssignments,
+        refreshAuditorAssignments,
         getEffectiveAuditorForSale,
         approveIssueDefinition,
         createAuditCaseForQueue,

@@ -177,9 +177,39 @@ export function doIntervalsOverlap(
  * Returns the calendar date string (YYYY-MM-DD) for the day immediately before dateStr.
  */
 export function getDayBefore(dateStr: string): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split('T')[0];
+  // Pure UTC calendar arithmetic: independent of the runtime's timezone
+  // (browser in Vietnam vs. Vercel in UTC must produce the same date).
+  const d = new Date(`${normalizeDateOnly(dateStr)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Business calendar date (YYYY-MM-DD) in Vietnam (Asia/Ho_Chi_Minh, UTC+7, no DST).
+ * `new Date().toISOString()` is UTC and is one day behind between 00:00-07:00 in Vietnam.
+ */
+export function vietnamToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now);
+}
+
+/**
+ * Normalises DATE-like values to YYYY-MM-DD. Accepts 'YYYY-MM-DD', ISO timestamps
+ * and Date objects (pg returns DATE columns as Date unless cast to text).
+ */
+export function normalizeDateOnly(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : value.toISOString().slice(0, 10);
+  }
+  return String(value).trim().slice(0, 10);
+}
+
+/** True when `ref` identifies the assignment's sale by canonical id or by sale code. */
+export function assignmentMatchesSale(
+  assignment: Pick<AuditorAssignment, 'saleId' | 'saleCode'>,
+  ref: string
+): boolean {
+  return assignment.saleId === ref || (!!assignment.saleCode && assignment.saleCode === ref);
 }
 
 export interface ResolveAssignmentParams {
@@ -223,7 +253,7 @@ export function resolveAssignmentChain(
     saleName,
     teamName,
     auditorName,
-    todayStr = new Date().toISOString().split('T')[0],
+    todayStr = vietnamToday(),
   } = params;
 
   // Validate dates
@@ -240,7 +270,13 @@ export function resolveAssignmentChain(
     };
   }
 
-  const existingForSale = allAssignments.filter((a) => a.saleId === saleId);
+  const existingForSale = allAssignments
+    .filter((a) => assignmentMatchesSale(a, saleId))
+    .map((a) => ({
+      ...a,
+      effectiveFrom: normalizeDateOnly(a.effectiveFrom),
+      effectiveTo: normalizeDateOnly(a.effectiveTo) || null,
+    }));
 
   // Check 1: Exact date collision on effectiveFrom
   const sameStart = existingForSale.find((a) => a.effectiveFrom === effectiveFrom);
@@ -322,7 +358,7 @@ export function resolveAssignmentChain(
 
   // Update existing assignments: close previous open-ended assignment if replacing
   const updatedAssignments = allAssignments.map((asg) => {
-    if (asg.saleId === saleId && openEnded && asg.id === openEnded.id && !effectiveTo) {
+    if (assignmentMatchesSale(asg, saleId) && openEnded && asg.id === openEnded.id && !effectiveTo) {
       // Truncate previous open-ended assignment at day before new start
       const wasActiveToday =
         asg.effectiveFrom <= todayStr && todayStr <= dayBeforeStr;
@@ -358,7 +394,7 @@ export function getEffectiveAuditorForSale(
   auditDate: string
 ): AuditorAssignment | undefined {
   return assignments.find((asg) => {
-    if (asg.saleId !== saleId) return false;
+    if (!assignmentMatchesSale(asg, saleId)) return false;
     const startsBeforeOrOn = asg.effectiveFrom <= auditDate;
     const endsAfterOrOn = !asg.effectiveTo || asg.effectiveTo >= auditDate;
     return startsBeforeOrOn && endsAfterOrOn;

@@ -234,10 +234,16 @@ export interface CorrectiveAction {
 
 export interface AuditorAssignment {
   id: string;
+  /** Canonical app_users.id of the sale. */
   saleId: string;
+  /** Human-facing sale code (sales_profiles.sale_code); UI lookups may use either. */
+  saleCode?: string | null;
   saleName: string;
   teamName: string;
+  /** Auditor code (auditor_profiles.auditor_code) - the key space used by the UI. */
   auditorId: string;
+  /** Canonical app_users.id of the auditor. */
+  auditorUserId?: string;
   auditorName: string;
   effectiveFrom: string; // YYYY-MM-DD
   effectiveTo?: string | null; // YYYY-MM-DD or null if currently active

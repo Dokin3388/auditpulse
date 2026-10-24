@@ -9,8 +9,9 @@ import {
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { Modal } from '../common/Modal';
+import { vietnamToday } from '../../services/workflowRules';
 
-const TODAY_DATE = '2026-10-20';
+const TODAY_DATE = vietnamToday();
 
 export const AuditorPortfolioView: React.FC = () => {
   const {
@@ -29,10 +30,12 @@ export const AuditorPortfolioView: React.FC = () => {
 
   // Modal create assignment
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedSaleId, setSelectedSaleId] = useState('SALE-04');
-  const [targetAuditorId, setTargetAuditorId] = useState('AUD-03');
-  const [effectiveFromDate, setEffectiveFromDate] = useState('2026-10-21');
+  const [selectedSaleId, setSelectedSaleId] = useState('');
+  const [targetAuditorId, setTargetAuditorId] = useState('');
+  const [effectiveFromDate, setEffectiveFromDate] = useState(() => vietnamToday());
   const [assignmentReason, setAssignmentReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Filter sales for assignment options
@@ -54,29 +57,38 @@ export const AuditorPortfolioView: React.FC = () => {
   };
 
   const handleOpenAssignForSale = (saleId: string) => {
-    setSelectedSaleId(saleId);
-    setEffectiveFromDate('2026-10-21');
+    setSelectedSaleId(allUsers.find((u) => u.id === saleId || u.saleId === saleId)?.id ?? saleId);
+    setEffectiveFromDate(vietnamToday());
     setAssignmentReason('Điều chỉnh portfolio do sale đổi cơ cấu team');
+    setModalError(null);
     setIsAssignModalOpen(true);
   };
 
-  const handleCreateAssignment = (e: React.FormEvent) => {
+  const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignmentReason.trim()) return;
+    if (saving || !assignmentReason.trim()) return;
+    if (!selectedSaleId || !targetAuditorId) {
+      setModalError('Vui lòng chọn Sale và Auditor.');
+      return;
+    }
 
-    const res = createAuditorAssignment(
-      selectedSaleId,
-      targetAuditorId,
-      effectiveFromDate,
-      assignmentReason
-    );
-
-    if (res.success) {
-      setMsg({ type: 'success', text: res.message });
-      setIsAssignModalOpen(false);
-      setAssignmentReason('');
-    } else {
-      setMsg({ type: 'error', text: res.message });
+    setSaving(true);
+    setModalError(null);
+    try {
+      // Resolves only after the server committed and the list was reloaded from it.
+      const res = await createAuditorAssignment(selectedSaleId, targetAuditorId, effectiveFromDate, assignmentReason);
+      if (res.success) {
+        setMsg({ type: 'success', text: res.message });
+        setIsAssignModalOpen(false);
+        setAssignmentReason('');
+      } else {
+        // Keep the modal and every field as-is so nothing has to be re-entered.
+        setModalError(res.message);
+      }
+    } catch (error) {
+      setModalError(error instanceof Error ? error.message : 'Không thể lưu phân công.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -346,8 +358,9 @@ export const AuditorPortfolioView: React.FC = () => {
               onChange={(e) => setSelectedSaleId(e.target.value)}
               className="w-full p-2 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
             >
+              <option value="">— Chọn Sale —</option>
               {saleUsers.map((s) => (
-                <option key={s.saleId} value={s.saleId}>
+                <option key={s.id} value={s.id}>
                   {s.name} ({s.teamName})
                 </option>
               ))}
@@ -363,6 +376,7 @@ export const AuditorPortfolioView: React.FC = () => {
               onChange={(e) => setTargetAuditorId(e.target.value)}
               className="w-full p-2 rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
             >
+              <option value="">— Chọn Auditor —</option>
               {auditors.map((a) => (
                 <option key={a.auditorId} value={a.auditorId}>
                   {a.name} ({a.auditorId})
@@ -396,6 +410,12 @@ export const AuditorPortfolioView: React.FC = () => {
             />
           </div>
 
+          {modalError && (
+            <div role="alert" className="p-2.5 rounded-md border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+              {modalError}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
@@ -406,10 +426,10 @@ export const AuditorPortfolioView: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={!assignmentReason.trim()}
+              disabled={saving || !assignmentReason.trim()}
               className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 font-medium rounded-md disabled:opacity-50"
             >
-              Lưu Phân công
+              {saving ? 'Đang lưu...' : 'Lưu Phân công'}
             </button>
           </div>
         </form>

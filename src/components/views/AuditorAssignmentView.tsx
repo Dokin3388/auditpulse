@@ -11,8 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuditStore } from '../../services/auditStore';
 import { Badge } from '../common/Badge';
-
-const today = new Date().toISOString().slice(0, 10);
+import { vietnamToday } from '../../services/workflowRules';
 
 export const AuditorAssignmentView: React.FC = () => {
   const {
@@ -24,7 +23,8 @@ export const AuditorAssignmentView: React.FC = () => {
   } = useAuditStore();
 
   const [selectedAuditorId, setSelectedAuditorId] = useState('');
-  const [effectiveFrom, setEffectiveFrom] = useState(today);
+  const [effectiveFrom, setEffectiveFrom] = useState(() => vietnamToday());
+  const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState('Luân chuyển định kỳ để đảm bảo độc lập audit');
   const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
@@ -72,8 +72,7 @@ export const AuditorAssignmentView: React.FC = () => {
   };
 
   const toggleVisibleSales = () => {
-    // The assignment API references app_users.id (e.g. SALE-S20), not the
-    // human-facing sale code (e.g. S20).
+    // Selection is keyed by app_users.id everywhere in this view.
     const visibleIds = sales.map((sale) => sale.id);
     const allVisibleSelected = visibleIds.every((id) => selectedSaleIds.includes(id));
     setSelectedSaleIds((previous) =>
@@ -83,7 +82,8 @@ export const AuditorAssignmentView: React.FC = () => {
     );
   };
 
-  const saveAssignments = () => {
+  const saveAssignments = async () => {
+    if (saving) return;
     if (!selectedAuditorId) {
       setFeedback({ success: false, message: 'Vui lòng chọn Auditor nhận portfolio trước.' });
       return;
@@ -92,9 +92,19 @@ export const AuditorAssignmentView: React.FC = () => {
       setFeedback({ success: false, message: 'Vui lòng chọn ít nhất một nhân viên Sale để phân công.' });
       return;
     }
-    const result = createAuditorAssignments(selectedSaleIds, selectedAuditorId, effectiveFrom, reason);
-    setFeedback(result);
-    if (result.success) setSelectedSaleIds([]);
+    setSaving(true);
+    setFeedback(null);
+    try {
+      // Resolves only after the server committed and the list was reloaded from it.
+      const result = await createAuditorAssignments(selectedSaleIds, selectedAuditorId, effectiveFrom, reason);
+      setFeedback(result);
+      // Keep the selection/form intact on failure so nothing has to be re-entered.
+      if (result.success) setSelectedSaleIds([]);
+    } catch (error) {
+      setFeedback({ success: false, message: error instanceof Error ? error.message : 'Không thể lưu phân công.' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const visibleIds = sales.map((sale) => sale.id);
@@ -214,12 +224,12 @@ export const AuditorAssignmentView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {sales.map((sale) => {
-                  const assignment = sale.saleId ? getEffectiveAuditorForSale(sale.saleId, effectiveFrom) : undefined;
-                  const selected = sale.saleId ? selectedSaleIds.includes(sale.saleId) : false;
+                  const assignment = getEffectiveAuditorForSale(sale.id, effectiveFrom);
+                  const selected = selectedSaleIds.includes(sale.id);
                   return (
                     <tr
                       key={sale.id}
-                      onClick={() => sale.saleId && toggleSale(sale.saleId)}
+                      onClick={() => toggleSale(sale.id)}
                       className={`cursor-pointer transition-colors ${
                         selected ? 'bg-slate-100 dark:bg-slate-800/80 font-medium' : 'hover:bg-slate-50 dark:hover:bg-slate-850'
                       }`}
@@ -228,7 +238,7 @@ export const AuditorAssignmentView: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={selected}
-                          onChange={() => sale.saleId && toggleSale(sale.saleId)}
+                          onChange={() => toggleSale(sale.id)}
                           aria-label={`Chọn ${sale.name}`}
                           className="rounded border-slate-300 w-4 h-4 cursor-pointer"
                         />
@@ -360,10 +370,10 @@ export const AuditorAssignmentView: React.FC = () => {
 
             <button
               onClick={saveAssignments}
-              disabled={!canManage || selectedSaleIds.length === 0 || !selectedAuditorId}
+              disabled={!canManage || saving || selectedSaleIds.length === 0 || !selectedAuditorId}
               className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 font-bold rounded-md text-sm shadow-sm transition-colors disabled:opacity-40"
             >
-              Lưu phân công {selectedSaleIds.length > 0 ? `(${selectedSaleIds.length} Sale)` : ''}
+              {saving ? 'Đang lưu lên máy chủ...' : `Lưu phân công ${selectedSaleIds.length > 0 ? `(${selectedSaleIds.length} Sale)` : ''}`}
             </button>
           </div>
         </div>
