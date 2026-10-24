@@ -174,7 +174,7 @@ async function getList<T>(path: string): Promise<T[]> {
 }
 
 const riskTagLabels: Record<RiskTagCode, string> = {
-  YESTERDAY_CUSTOMERS: 'Khách trong 2 ngày trước',
+  YESTERDAY_CUSTOMERS: 'Khách tạo hôm qua',
   NO_QUOTATION: 'Chưa báo giá',
   QUOTED_NOT_ORDERED: 'Báo giá chưa chốt',
 };

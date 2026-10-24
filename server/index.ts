@@ -415,10 +415,10 @@ app.get('/api/queue', async (req: Request, res: Response) => {
           ELSE q.status
         END AS status,
         (
-          CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN q.audit_date - 2 AND q.audit_date - 1
+          CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = q.audit_date - 1
             THEN jsonb_build_array(jsonb_build_object(
-              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách trong 2 ngày trước',
-              'description', 'Khách được ghi nhận trong khoảng D-2 đến D-1.', 'detectedAt', q.audit_date::text
+              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách tạo hôm qua',
+              'description', 'Khách được tạo trong ngày D-1 (hôm qua).', 'detectedAt', q.audit_date::text
             )) ELSE '[]'::jsonb END
           || CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= q.audit_date - 7
             AND NOT EXISTS (

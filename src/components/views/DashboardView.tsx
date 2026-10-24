@@ -255,7 +255,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
-                    Khách trong 2 ngày trước (D-2 đến D-1)
+                    Khách tạo hôm qua (D-1)
                   </div>
                   <div className="text-[10px] text-slate-400 font-mono">
                     YESTERDAY_CUSTOMERS
@@ -269,10 +269,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="p-2.5 rounded-md bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
-                    Chưa báo giá 2 ngày
+                    Khách mới 7 ngày chưa báo giá
                   </div>
                   <div className="text-[10px] text-slate-400 font-mono">
-                    NO_QUOTATION [D-2, D-1]
+                    NO_QUOTATION [D-7, D-1]
                   </div>
                 </div>
                 <span className="text-base font-semibold text-slate-900 dark:text-slate-100 tabular-nums">

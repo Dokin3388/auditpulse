@@ -38,6 +38,7 @@ async function withFixtures(run: (f: F, c: pg.PoolClient) => Promise<void>) {
         [mk(n), `Khach ${n} ${tag}`, firstSeen, owner, owner ? f.team : null]);
     await cust('NEW', '2026-10-23T03:00:00Z', f.sale);          // created "yesterday", no quote
     await cust('OLDNOQUOTE', '2026-09-01T03:00:00Z', f.sale);   // old, never quoted
+    await cust('TWODAYS', '2026-10-22T03:00:00Z', f.sale);      // created 2 days ago, never quoted
     await cust('RECENT', '2026-10-20T03:00:00Z', f.sale);       // 4 days old, never quoted
     await cust('STALEQUOTE', '2026-07-01T03:00:00Z', f.sale);   // quoted long ago, no order
     await cust('QUOTED', '2026-09-01T03:00:00Z', f.sale);       // quoted, no order
@@ -95,12 +96,13 @@ liveTest('Daily rules: yesterday customers + no quotation + quoted-not-ordered l
     assert.deepEqual(byId.NEW, ['NO_QUOTATION', 'YESTERDAY_CUSTOMERS']);
     assert.equal(byId.OLDNOQUOTE, undefined, 'never-quoted customers older than 7 days leave the daily queue');
     assert.deepEqual(byId.RECENT, ['NO_QUOTATION']);
+    assert.deepEqual(byId.TWODAYS, ['NO_QUOTATION'], 'only customers created exactly yesterday get the yesterday tag');
     assert.equal(byId.STALEQUOTE, undefined, 'quotations older than 30 days are not chased any more');
     assert.deepEqual(byId.QUOTED, ['QUOTED_NOT_ORDERED']);
     assert.equal(byId.ORDERED, undefined, 'customer with quote AND valid order is not at risk');
     assert.equal(byId.TODAY, undefined, 'customer created on the audit day itself is not in that day yet');
     assert.equal(byId.NOOWNER, undefined, 'customer without an owner sale cannot be queued');
-    assert.equal(rows.length, 3);
+    assert.equal(rows.length, 4);
   });
 });
 
