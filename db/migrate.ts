@@ -105,7 +105,13 @@ async function runRollback() {
 
     await client.query('BEGIN');
     try {
-      if (latestVersion === '0004_google_sheets_webhook_sync.sql') {
+      if (latestVersion === '0007_customer_identity.sql') {
+        await client.query(`
+          DROP TABLE IF EXISTS customer_merge_log CASCADE;
+          DROP TABLE IF EXISTS unmatched_transactions CASCADE;
+          DROP TABLE IF EXISTS customer_identifiers CASCADE;
+        `);
+      } else if (latestVersion === '0004_google_sheets_webhook_sync.sql') {
         await client.query(`
           DROP TABLE IF EXISTS google_sheet_sync_errors CASCADE;
           DROP TABLE IF EXISTS google_sheet_row_state CASCADE;

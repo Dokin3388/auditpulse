@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Badge, SeverityBadge } from '../common/Badge';
 import { DataOnboardingTab } from './DataOnboardingTab';
+import { CustomerIdentityPanel } from './CustomerIdentityPanel';
 import { bootstrapAuditorAccounts, getGoogleSheetSyncRuns, getSourceIssueLogs, type GoogleSheetSyncRun, type SourceIssueLog } from '../../services/api';
 
 const googleSourceLabels: Record<GoogleSheetSyncRun['sourceId'], string> = {
@@ -315,6 +316,7 @@ export const SettingsView: React.FC = () => {
       )}
 
       {/* Tab Content 3: Data Source Sync Status */}
+      {activeTab === 'sync' && isHeadAuditor && <CustomerIdentityPanel />}
       {activeTab === 'sync' && (
         <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-3">
           <div className="flex items-center justify-between border-b pb-2 dark:border-slate-800">

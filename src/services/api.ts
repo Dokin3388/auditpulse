@@ -111,6 +111,57 @@ export async function bootstrapAuditorAccounts(): Promise<Array<{ id: string; na
   return payload?.accounts || [];
 }
 
+export interface CustomerIdentityReport {
+  generatedAt: string;
+  customers: { total: number; placeholder: number; withoutIdentifier: number; withoutPhone: number; suspectCreatedDate: number };
+  identifiers: { phone: number; code: number };
+  duplicates: { phoneGroups: number; customersInvolved: number };
+  transactions: { quotations: { total: number; onPlaceholder: number }; orders: { total: number; onPlaceholder: number } };
+  unmatched: { quotations: number; orders: number; noIdentifier: number; sample: Array<{ kind: string; sourceCode: string; reason: string; phones: string[]; customerCode: string | null; lastSeenAt: string }> };
+  lastSyncs: Array<{
+    sheetName: string; receivedAt: string; status: string; totalRows: number; appliedRows: number; skippedRows: number;
+    identity: { customersCreated?: number; customerRowsRejected?: number; customersMatched?: number; identityConflicts?: number; unmatchedQuotations?: number; unmatchedOrders?: number; invalidDates?: number; ownerUnresolved?: number; reconciled?: number } | null;
+  }>;
+}
+
+export interface CustomerMergePreview {
+  generatedAt: string;
+  totals: {
+    customers: number; clusters: number; customersToRemove: number; quotationsToMove: number; ordersToMove: number;
+    ownerConflicts: number; identifiersToAdd: number; codesSharedByManyCustomers: number;
+  };
+  clusters: Array<{
+    winnerId: string; loserIds: string[]; phones: string[]; quotationsToMove: number; ordersToMove: number; ownerConflict: boolean;
+    members: Array<{ id: string; name: string; channel: string | null; quotes: number; orders: number; hasOwner: boolean }>;
+  }>;
+  needsReview: Array<{ phones: string[]; customerIds: string[] }>;
+  sharedCodes: Array<{ code: string; customers: number }>;
+}
+
+export interface CustomerMergeResult {
+  merged: number; customersRemoved: number; quotationsMoved: number; ordersMoved: number;
+  failed: Array<{ winnerId: string; error: string }>; remaining: number; identifiersAdded: number; done: boolean;
+}
+
+async function adminJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...init });
+  const payload = (await response.json().catch(() => null)) as { data?: T; error?: string } | null;
+  if (!response.ok || !payload?.data) throw new Error(payload?.error || `Yêu cầu thất bại (${response.status}).`);
+  return payload.data;
+}
+
+export const getCustomerIdentityReport = () => adminJson<CustomerIdentityReport>('/api/admin/customer-identity/report');
+
+export const previewCustomerMerge = () =>
+  adminJson<CustomerMergePreview>('/api/admin/customer-identity/merge', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apply: false }),
+  });
+
+export const applyCustomerMergeBatch = () =>
+  adminJson<CustomerMergeResult>('/api/admin/customer-identity/merge', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apply: true }),
+  });
+
 interface ApiListResponse<T> {
   data: T[];
 }
