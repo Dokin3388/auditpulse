@@ -499,20 +499,40 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
   }
   try {
     const parsed = parseCsv(csvText);
-    const required = ['customer_name', 'phone', 'sale_code', 'team_code', 'check_reason'];
-    const missing = required.filter((header) => !parsed.headers.includes(header));
+    const normalizeHeader = (value: string) => value
+      .replace(/^\uFEFF/, '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase().replace(/\s+/g, ' ');
+    const headerAliases: Record<string, string> = {
+      customer_name: 'customer_name', 'ten khach hang': 'customer_name', 'ten kh': 'customer_name', 'khach hang': 'customer_name',
+      phone: 'phone', 'so dien thoai': 'phone', sdt: 'phone',
+      sale_code: 'sale_code', 'ma sale': 'sale_code', 'ma nhan vien': 'sale_code', 'nguoi phu trach': 'sale_code',
+      team_code: 'team_code', 'ma team': 'team_code', 'ma nhom': 'team_code', team: 'team_code',
+      check_reason: 'check_reason', 'ly do check': 'check_reason', 'ly do kiem tra': 'check_reason',
+      priority: 'priority', 'uu tien': 'priority', notes: 'notes', 'ghi chu': 'notes',
+    };
+    const normalizedRows = parsed.rows.map((row) => {
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(row)) {
+        const canonical = headerAliases[normalizeHeader(key)];
+        if (canonical) normalized[canonical] = value;
+      }
+      normalized.check_reason ||= 'Danh sách khách cần kiểm tra';
+      return normalized;
+    });
+    const required = ['customer_name', 'phone', 'sale_code', 'team_code'];
+    const availableHeaders = new Set(normalizedRows.flatMap((row) => Object.keys(row)));
+    const missing = required.filter((header) => !availableHeaders.has(header));
     if (missing.length) throw new Error(`Thiếu cột bắt buộc: ${missing.join(', ')}.`);
     const result = await withTransaction(async (client) => {
       const rows: Array<{ data: Record<string, string>; phone: string; saleId: string; saleName: string; teamId: string; teamName: string; priority: string }> = [];
       const errors: string[] = [];
       const phones = new Set<string>();
-      for (let index = 0; index < parsed.rows.length; index += 1) {
-        const data = parsed.rows[index];
+      for (let index = 0; index < normalizedRows.length; index += 1) {
+        const data = normalizedRows[index];
         const line = parsed.rawLineNumbers[index] || index + 2;
         const phone = String(data.phone || '').replace(/\D/g, '');
         const priority = String(data.priority || 'MEDIUM').trim().toUpperCase();
-        if (!String(data.customer_name || '').trim() || phone.length < 9 || !String(data.sale_code || '').trim() || !String(data.team_code || '').trim() || !String(data.check_reason || '').trim()) {
-          errors.push(`Dòng ${line}: cần đủ tên khách, SĐT, mã sale, mã team và lý do check.`);
+        if (!String(data.customer_name || '').trim() || phone.length < 9 || !String(data.sale_code || '').trim() || !String(data.team_code || '').trim()) {
+          errors.push(`Dòng ${line}: cần đủ tên khách, SĐT, Người phụ trách và Team.`);
           continue;
         }
         if (!['LOW', 'MEDIUM', 'HIGH'].includes(priority)) {
