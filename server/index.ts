@@ -522,87 +522,184 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
     const availableHeaders = new Set(normalizedRows.flatMap((row) => Object.keys(row)));
     const missing = required.filter((header) => !availableHeaders.has(header));
     if (missing.length) throw new Error(`Thiếu cột bắt buộc: ${missing.join(', ')}.`);
-    const result = await withTransaction(async (client) => {
-      const rows: Array<{ data: Record<string, string>; phone: string; saleId: string; saleName: string; teamId: string; teamName: string; priority: string }> = [];
-      const errors: string[] = [];
-      const phones = new Set<string>();
-      for (let index = 0; index < normalizedRows.length; index += 1) {
-        const data = normalizedRows[index];
-        const line = parsed.rawLineNumbers[index] || index + 2;
-        const phone = String(data.phone || '').replace(/\D/g, '');
-        const priority = String(data.priority || 'MEDIUM').trim().toUpperCase();
-        if (!String(data.customer_name || '').trim() || phone.length < 9 || !String(data.sale_code || '').trim() || !String(data.team_code || '').trim()) {
-          errors.push(`Dòng ${line}: cần đủ tên khách, SĐT, Người phụ trách và Team.`);
-          continue;
-        }
-        if (!['LOW', 'MEDIUM', 'HIGH'].includes(priority)) {
-          errors.push(`Dòng ${line}: ưu tiên chỉ nhận LOW, MEDIUM hoặc HIGH.`);
-          continue;
-        }
-        if (phones.has(phone)) {
-          errors.push(`Dòng ${line}: SĐT ${phone} bị trùng trong file.`);
-          continue;
-        }
+    type IntakeRow = { data: Record<string, string>; phone: string; saleInput: string; teamInput: string; priority: string };
+    const intakeRows: IntakeRow[] = [];
+    const errors: string[] = [];
+    const phones = new Set<string>();
+    for (let index = 0; index < normalizedRows.length; index += 1) {
+      const data = normalizedRows[index];
+      const line = parsed.rawLineNumbers[index] || index + 2;
+      const phone = String(data.phone || '').replace(/\D/g, '');
+      const saleInput = String(data.sale_code || '').trim();
+      const teamInput = String(data.team_code || '').trim();
+      const priority = String(data.priority || 'MEDIUM').trim().toUpperCase();
+      if (!String(data.customer_name || '').trim() || phone.length < 9 || !saleInput || !teamInput) {
+        errors.push(`Dòng ${line}: cần đủ tên khách, SĐT, Người phụ trách và Team.`);
+      } else if (!['LOW', 'MEDIUM', 'HIGH'].includes(priority)) {
+        errors.push(`Dòng ${line}: ưu tiên chỉ nhận LOW, MEDIUM hoặc HIGH.`);
+      } else if (phones.has(phone)) {
+        errors.push(`Dòng ${line}: SĐT ${phone} bị trùng trong file.`);
+      } else {
         phones.add(phone);
-        let owner = await client.query<{ saleId: string; saleName: string; teamId: string; teamName: string }>(
-          `SELECT u.id AS "saleId", u.name AS "saleName", t.id AS "teamId", t.name AS "teamName"
-             FROM app_users u JOIN sales_profiles sp ON sp.id = u.id JOIN teams t ON t.id = sp.team_id
-            WHERE (sp.sale_code = $1 OR lower(u.name) = lower($1))
-              AND u.role = 'SALE'`,
-          [String(data.sale_code).trim()]
-        );
-        if (!owner.rows[0]) {
-          const importedTeam = String(data.team_code || '').trim();
-          let team = await client.query<{ id: string; name: string }>(
-            `SELECT id, name FROM teams WHERE lower(name) = lower($1) OR code = $1 LIMIT 1`, [importedTeam]
-          );
-          if (!team.rows[0]) {
-            const suffix = randomBytes(8).toString('hex');
-            const teamId = `TEAM-IMP-${suffix}`;
-            await client.query(`INSERT INTO teams (id, code, name) VALUES ($1, $2, $3)`, [teamId, `IMP-${suffix}`, importedTeam]);
-            team = { rows: [{ id: teamId, name: importedTeam }] } as typeof team;
-          }
-          const suffix = randomBytes(8).toString('hex');
-          const saleId = `SALE-IMP-${suffix}`;
-          const saleName = String(data.sale_code).trim();
-          await client.query(
-            `INSERT INTO app_users (id, email, name, role, is_active) VALUES ($1, $2, $3, 'SALE', false)`,
-            [saleId, `import-${suffix}@auditpulse.local`, saleName]
-          );
-          await client.query(`INSERT INTO sales_profiles (id, sale_code, team_id) VALUES ($1, $2, $3)`, [saleId, `IMP-${suffix}`, team.rows[0].id]);
-          owner = { rows: [{ saleId, saleName, teamId: team.rows[0].id, teamName: team.rows[0].name }] } as typeof owner;
-        }
-        rows.push({ data, phone, priority, ...owner.rows[0] });
+        intakeRows.push({ data, phone, saleInput, teamInput, priority });
       }
-      if (!rows.length) throw new Error(errors.join(' ') || 'File không có dòng hợp lệ.');
-      if (errors.length) throw new Error(errors.slice(0, 8).join(' '));
+    }
+    if (!intakeRows.length) throw new Error(errors.join(' ') || 'File không có dòng hợp lệ.');
+    if (errors.length) throw new Error(errors.slice(0, 8).join(' '));
+
+    // The first version handled every customer with several sequential database
+    // round-trips. A regular worklist of a few hundred rows therefore felt stuck.
+    // Resolve and insert each entity type in batches so upload stays responsive.
+    const sqlValues = (rowCount: number, columnCount: number) => Array.from(
+      { length: rowCount },
+      (_, rowIndex) => `(${Array.from({ length: columnCount }, (_, columnIndex) => `$${rowIndex * columnCount + columnIndex + 1}`).join(', ')})`
+    ).join(', ');
+    const normaliseKey = (value: string) => value.trim().toLocaleLowerCase('vi-VN');
+    const result = await withTransaction(async (client) => {
+      type Owner = { saleId: string; saleName: string; teamId: string; teamName: string };
+      const saleInputs = [...new Set(intakeRows.map((row) => normaliseKey(row.saleInput)))];
+      const existingOwners = await client.query<Owner & { saleCode: string }>(
+        `SELECT u.id AS "saleId", u.name AS "saleName", sp.sale_code AS "saleCode", t.id AS "teamId", t.name AS "teamName"
+           FROM app_users u
+           JOIN sales_profiles sp ON sp.id = u.id
+           JOIN teams t ON t.id = sp.team_id
+          WHERE u.role = 'SALE'
+            AND (lower(sp.sale_code) = ANY($1) OR lower(u.name) = ANY($1))`,
+        [saleInputs]
+      );
+      const ownersByCode = new Map<string, Owner>();
+      const ownersByName = new Map<string, Owner>();
+      for (const owner of existingOwners.rows) {
+        const ownerData: Owner = { saleId: owner.saleId, saleName: owner.saleName, teamId: owner.teamId, teamName: owner.teamName };
+        ownersByCode.set(normaliseKey(owner.saleCode), ownerData);
+        if (!ownersByName.has(normaliseKey(owner.saleName))) ownersByName.set(normaliseKey(owner.saleName), ownerData);
+      }
+
+      const missingSaleKeys = new Map<string, { saleInput: string; teamInput: string }>();
+      for (const row of intakeRows) {
+        const saleKey = normaliseKey(row.saleInput);
+        if (!ownersByCode.has(saleKey) && !ownersByName.has(saleKey)) {
+          missingSaleKeys.set(`${saleKey}\u0000${normaliseKey(row.teamInput)}`, { saleInput: row.saleInput, teamInput: row.teamInput });
+        }
+      }
+      const missingSales = [...missingSaleKeys.values()];
+      const importedTeams = [...new Map(missingSales.map((sale) => [normaliseKey(sale.teamInput), sale.teamInput])).values()];
+      const existingTeams = importedTeams.length
+        ? await client.query<{ id: string; code: string; name: string }>(
+          `SELECT id, code, name FROM teams WHERE lower(name) = ANY($1) OR lower(code) = ANY($1)`,
+          [importedTeams.map(normaliseKey)]
+        )
+        : { rows: [] as Array<{ id: string; code: string; name: string }> };
+      const teamsByKey = new Map<string, { id: string; name: string }>();
+      for (const team of existingTeams.rows) {
+        teamsByKey.set(normaliseKey(team.name), { id: team.id, name: team.name });
+        teamsByKey.set(normaliseKey(team.code), { id: team.id, name: team.name });
+      }
+      const teamsToCreate = importedTeams
+        .filter((teamName) => !teamsByKey.has(normaliseKey(teamName)))
+        .map((teamName) => ({ id: `TEAM-IMP-${randomBytes(8).toString('hex')}`, code: `IMP-${randomBytes(8).toString('hex')}`, name: teamName }));
+      if (teamsToCreate.length) {
+        await client.query(
+          `INSERT INTO teams (id, code, name) VALUES ${sqlValues(teamsToCreate.length, 3)}`,
+          teamsToCreate.flatMap((team) => [team.id, team.code, team.name])
+        );
+        for (const team of teamsToCreate) teamsByKey.set(normaliseKey(team.name), { id: team.id, name: team.name });
+      }
+
+      const newOwners = new Map<string, Owner>();
+      const newSales = missingSales.map((sale) => {
+        const suffix = randomBytes(8).toString('hex');
+        const team = teamsByKey.get(normaliseKey(sale.teamInput));
+        if (!team) throw new Error(`Không thể tạo Team ${sale.teamInput}.`);
+        const owner: Owner = { saleId: `SALE-IMP-${suffix}`, saleName: sale.saleInput, teamId: team.id, teamName: team.name };
+        newOwners.set(`${normaliseKey(sale.saleInput)}\u0000${normaliseKey(sale.teamInput)}`, owner);
+        return { ...owner, email: `import-${suffix}@auditpulse.local`, saleCode: `IMP-${suffix}` };
+      });
+      if (newSales.length) {
+        await client.query(
+          `INSERT INTO app_users (id, email, name, role, is_active, login_enabled) VALUES ${sqlValues(newSales.length, 6)}`,
+          newSales.flatMap((sale) => [sale.saleId, sale.email, sale.saleName, 'SALE', false, false])
+        );
+        await client.query(
+          `INSERT INTO sales_profiles (id, sale_code, team_id) VALUES ${sqlValues(newSales.length, 3)}`,
+          newSales.flatMap((sale) => [sale.saleId, sale.saleCode, sale.teamId])
+        );
+      }
+
+      const rows = intakeRows.map((row) => {
+        const saleKey = normaliseKey(row.saleInput);
+        const owner = ownersByCode.get(saleKey)
+          || ownersByName.get(saleKey)
+          || newOwners.get(`${saleKey}\u0000${normaliseKey(row.teamInput)}`);
+        if (!owner) throw new Error(`Không thể xác định người phụ trách ${row.saleInput}.`);
+        return { ...row, ...owner };
+      });
+
+      const existingCustomers = await client.query<{ id: string; phone: string }>(
+        `SELECT DISTINCT ON (regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'))
+                id, regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') AS phone
+           FROM customers
+          WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = ANY($1)`,
+        [[...phones]]
+      );
+      const customersByPhone = new Map(existingCustomers.rows.map((customer) => [customer.phone, customer.id]));
+      const customersToCreate = rows
+        .filter((row) => !customersByPhone.has(row.phone))
+        .map((row) => ({ id: `MANUAL-CUST-${randomBytes(12).toString('hex')}`, code: `MANUAL-${randomBytes(12).toString('hex')}`, ...row }));
+      if (customersToCreate.length) {
+        await client.query(
+          `INSERT INTO customers (id, code, name, phone, first_seen_date, channel, current_sale_id, current_team_id)
+           VALUES ${customersToCreate.map((_, index) => `($${index * 6 + 1}, $${index * 6 + 2}, $${index * 6 + 3}, $${index * 6 + 4}, NOW(), 'AUDIT_MANUAL_INTAKE', $${index * 6 + 5}, $${index * 6 + 6})`).join(', ')}`,
+          customersToCreate.flatMap((customer) => [customer.id, customer.code, String(customer.data.customer_name).trim(), customer.phone, customer.saleId, customer.teamId])
+        );
+        for (const customer of customersToCreate) customersByPhone.set(customer.phone, customer.id);
+      }
 
       const runId = `RUN-MANUAL-${auditDate.replaceAll('-', '')}-${randomBytes(5).toString('hex')}`;
-      await client.query(`INSERT INTO audit_queue_runs (id, run_date, rule_version, total_items, status) VALUES ($1, $2, 'MANUAL-INTAKE-v1', $3, 'COMPLETED')`, [runId, auditDate, rows.length]);
-      let unassignedCount = 0;
-      for (const item of rows) {
-        const existing = await client.query<{ id: string }>(`SELECT id FROM customers WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = $1 LIMIT 1`, [item.phone]);
-        const customerId = existing.rows[0]?.id || `MANUAL-CUST-${randomBytes(12).toString('hex')}`;
-        if (!existing.rows[0]) {
-          await client.query(`INSERT INTO customers (id, code, name, phone, first_seen_date, channel, current_sale_id, current_team_id) VALUES ($1, $2, $3, $4, NOW(), 'AUDIT_MANUAL_INTAKE', $5, $6)`, [customerId, `MANUAL-${item.phone}`, String(item.data.customer_name).trim(), item.phone, item.saleId, item.teamId]);
-        }
-        const assignment = await client.query<{ auditorId: string; auditorName: string }>(
-          `SELECT a.auditor_id AS "auditorId", u.name AS "auditorName"
-             FROM auditor_assignments a JOIN app_users u ON u.id = a.auditor_id
-            WHERE a.sale_id = $1 AND a.is_active = true AND a.effective_from <= $2::date
-              AND (a.effective_to IS NULL OR a.effective_to >= $2::date)
-            ORDER BY a.effective_from DESC LIMIT 1`, [item.saleId, auditDate]
-        );
-        const auditor = assignment.rows[0];
-        if (!auditor) unassignedCount += 1;
-        await client.query(
-          `INSERT INTO audit_queue_items (id, queue_run_id, audit_date, customer_id, sale_id, team_id, assigned_auditor_id, status, risk_tags, rule_version, sync_timestamp, assigned_at, snapshot_customer_name, snapshot_sale_name, snapshot_team_name, snapshot_auditor_name)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, 'MANUAL-INTAKE-v1', NOW(), $10, $11, $12, $13, $14)`,
-          [`QUEUE-MANUAL-${randomBytes(12).toString('hex')}`, runId, auditDate, customerId, item.saleId, item.teamId, auditor?.auditorId || null, auditor ? 'ASSIGNED' : 'UNASSIGNED', JSON.stringify([{ code: 'MANUAL_CHECK', label: 'Danh sách cần kiểm tra', description: String(item.data.check_reason).trim(), detectedAt: auditDate, priority: item.priority }]), auditor ? new Date().toISOString() : null, String(item.data.customer_name).trim(), item.saleName, item.teamName, auditor?.auditorName || null]
-        );
-      }
-      await client.query(`INSERT INTO audit_trail_events (id, actor_name, actor_role, actor_user_id, action_type, description, metadata) VALUES ($1, $2, $3, $4, 'MANUAL_QUEUE_CREATED', $5, $6::jsonb)`, [`TRL-MANUAL-${randomBytes(9).toString('hex')}`, actor.name, actor.role, actor.id, `Đã lập ${rows.length} khách cần kiểm tra ngày ${auditDate}.`, JSON.stringify({ auditDate, runId })]);
-      return { createdCount: rows.length, unassignedCount };
+      await client.query(
+        `INSERT INTO audit_queue_runs (id, run_date, rule_version, total_items, status) VALUES ($1, $2, 'MANUAL-INTAKE-v1', $3, 'COMPLETED')`,
+        [runId, auditDate, rows.length]
+      );
+      const assignments = await client.query<{ saleId: string; auditorId: string; auditorName: string }>(
+        `SELECT DISTINCT ON (a.sale_id) a.sale_id AS "saleId", a.auditor_id AS "auditorId", u.name AS "auditorName"
+           FROM auditor_assignments a
+           JOIN app_users u ON u.id = a.auditor_id
+          WHERE a.sale_id = ANY($1) AND a.is_active = true AND a.effective_from <= $2::date
+            AND (a.effective_to IS NULL OR a.effective_to >= $2::date)
+          ORDER BY a.sale_id, a.effective_from DESC`,
+        [[...new Set(rows.map((row) => row.saleId))], auditDate]
+      );
+      const assignmentsBySale = new Map(assignments.rows.map((assignment) => [assignment.saleId, assignment]));
+      const queueRows = rows.map((row) => {
+        const auditor = assignmentsBySale.get(row.saleId);
+        return {
+          id: `QUEUE-MANUAL-${randomBytes(12).toString('hex')}`,
+          customerId: customersByPhone.get(row.phone),
+          ...row,
+          auditorId: auditor?.auditorId || null,
+          auditorName: auditor?.auditorName || null,
+          status: auditor ? 'ASSIGNED' : 'UNASSIGNED',
+        };
+      });
+      if (queueRows.some((row) => !row.customerId)) throw new Error('Không thể xác định khách hàng sau khi nhập file.');
+      const insertedQueue = await client.query<{ status: string }>(
+        `INSERT INTO audit_queue_items (id, queue_run_id, audit_date, customer_id, sale_id, team_id, assigned_auditor_id, status, risk_tags, rule_version, sync_timestamp, assigned_at, snapshot_customer_name, snapshot_sale_name, snapshot_team_name, snapshot_auditor_name)
+         VALUES ${queueRows.map((_, index) => `($${index * 14 + 1}, $${index * 14 + 2}, $${index * 14 + 3}, $${index * 14 + 4}, $${index * 14 + 5}, $${index * 14 + 6}, $${index * 14 + 7}, $${index * 14 + 8}, $${index * 14 + 9}::jsonb, 'MANUAL-INTAKE-v1', NOW(), $${index * 14 + 10}, $${index * 14 + 11}, $${index * 14 + 12}, $${index * 14 + 13}, $${index * 14 + 14})`).join(', ')}
+         ON CONFLICT (audit_date, customer_id) DO NOTHING
+         RETURNING status`,
+        queueRows.flatMap((row) => [
+          row.id, runId, auditDate, row.customerId, row.saleId, row.teamId, row.auditorId, row.status,
+          JSON.stringify([{ code: 'MANUAL_CHECK', label: 'Danh sách cần kiểm tra', description: String(row.data.check_reason).trim(), detectedAt: auditDate, priority: row.priority }]),
+          row.auditorId ? new Date().toISOString() : null, String(row.data.customer_name).trim(), row.saleName, row.teamName, row.auditorName,
+        ])
+      );
+      const createdCount = insertedQueue.rowCount || 0;
+      const unassignedCount = insertedQueue.rows.filter((row) => row.status === 'UNASSIGNED').length;
+      await client.query(
+        `INSERT INTO audit_trail_events (id, actor_name, actor_role, actor_user_id, action_type, description, metadata) VALUES ($1, $2, $3, $4, 'MANUAL_QUEUE_CREATED', $5, $6::jsonb)`,
+        [`TRL-MANUAL-${randomBytes(9).toString('hex')}`, actor.name, actor.role, actor.id, `Đã lập ${createdCount} khách cần kiểm tra ngày ${auditDate}.`, JSON.stringify({ auditDate, runId, requestedCount: rows.length, createdCount })]
+      );
+      return { createdCount, unassignedCount };
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) {
