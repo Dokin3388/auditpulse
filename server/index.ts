@@ -132,17 +132,68 @@ app.all('/api/auth/*splat', authHandler);
 type AppActor = { id: string; email: string; name: string; role: string; avatarUrl: string | null };
 
 const ensureDefaultIssueDefinitions = async (client: { query: (text: string, values?: unknown[]) => Promise<unknown> }) => {
+  // Canonical snapshot of the user's "Bộ chấm lỗi Sale – Hợp nhất" sheet.
+  // The operational UI reads this table; rule-driven signals are mapped to
+  // their matching codes (for example QUOTE_001) rather than inventing a
+  // parallel catalogue.
   const defaults = [
-    ['ISSUE-NO-QUOTE', 'NO_QUOTATION', 'Chưa báo giá khách hàng', 'SALE_EXECUTION', 'Thực thi Sale', 'HIGH', true, 'Kiểm tra lịch sử tư vấn và cập nhật báo giá hoặc lý do chưa thể báo giá.'],
-    ['ISSUE-NO-ORDER', 'QUOTED_NOT_ORDERED', 'Báo giá chưa chốt đơn', 'SALE_EXECUTION', 'Thực thi Sale', 'HIGH', false, 'Kiểm tra follow-up, nhu cầu khách và kế hoạch chốt đơn tiếp theo.'],
-    ['ISSUE-FOLLOW-UP', 'FOLLOW_UP_MISSED', 'Chưa follow-up đúng hạn', 'SALE_EXECUTION', 'Thực thi Sale', 'MEDIUM', false, 'Bổ sung lịch sử follow-up và thống nhất thời điểm liên hệ lại với khách.'],
-    ['ISSUE-DATA-QUALITY', 'CRM_DATA_INCOMPLETE', 'Thông tin khách hàng chưa đầy đủ', 'DATA_QUALITY', 'Chất lượng dữ liệu', 'LOW', false, 'Hoàn thiện số điện thoại, nguồn khách và thông tin cần thiết trên CRM.'],
+    ['RESP_001', 'Không phản hồi khách >3h / quên khách', 'RESPONSE', 'Tốc độ phản hồi', 'HIGH', false, 'Khách nhắn nhưng Sale không gửi mẫu, giá hoặc báo giá theo nhu cầu trong ngày.'],
+    ['RESP_002', 'Phản hồi khách quá chậm (>15p)', 'RESPONSE', 'Tốc độ phản hồi', 'MEDIUM', false, 'Tốc độ trả lời quá 15 phút, ngoại trừ giờ tiếp khách hoặc buổi tối.'],
+    ['FU_001', 'Không follow-up', 'FOLLOW_UP', 'Chăm sóc / follow-up', 'HIGH', true, 'Khách không có tương tác quá 7 ngày hoặc không thấy liên hệ trên Zalo và Pitel.'],
+    ['FU_002', 'Follow-up sai cadence', 'FOLLOW_UP', 'Chăm sóc / follow-up', 'HIGH', true, 'Khách không có tương tác quá 3 ngày sau lần chạm gần nhất.'],
+    ['FU_003', 'Follow-up 1–2 lần rồi bỏ', 'FOLLOW_UP', 'Chăm sóc / follow-up', 'MEDIUM', true, 'Chỉ follow 1–2 lần rồi dừng khi khách chưa từ chối.'],
+    ['CALL_001', 'Khách gọi nhỡ không gọi/nhắn lại', 'CALLING', 'Gọi điện', 'HIGH', false, 'Cuộc gọi nhỡ không được gọi lại hoặc nhắn lại.'],
+    ['NEED_001', 'Không khai thác mục đích sử dụng', 'NEEDS_DISCOVERY', 'Khai thác nhu cầu', 'MEDIUM', false, 'Hội thoại không có câu hỏi về mục đích sử dụng.'],
+    ['NEED_002', 'Không khai thác ngân sách', 'NEEDS_DISCOVERY', 'Khai thác nhu cầu', 'MEDIUM', false, 'Không hỏi mức ngân sách hoặc giá mong đợi.'],
+    ['NEED_003', 'Không khai thác timeline mua', 'NEEDS_DISCOVERY', 'Khai thác nhu cầu', 'MEDIUM', false, 'Không hỏi thời điểm mua hoặc thi công.'],
+    ['NEED_004', 'Không khai thác khu vực giao hàng', 'NEEDS_DISCOVERY', 'Khai thác nhu cầu', 'LOW', false, 'Không hỏi khu vực hoặc địa chỉ giao hàng.'],
+    ['CONS_001', 'Tư vấn quá thiên về sản phẩm', 'CONSULTING', 'Chất lượng tư vấn', 'MEDIUM', false, 'Liệt kê sản phẩm mà không gắn với nhu cầu của khách.'],
+    ['CONS_002', 'Không đưa giải pháp phù hợp', 'CONSULTING', 'Chất lượng tư vấn', 'MEDIUM', false, 'Không đưa được giải pháp phù hợp với bối cảnh khách hàng.'],
+    ['CONS_003', 'Không dẫn dắt khách ra quyết định', 'CONSULTING', 'Chất lượng tư vấn', 'MEDIUM', false, 'Không có bước chốt tiếp theo về ngày, giờ, mẫu hoặc số lượng.'],
+    ['CONS_004', 'Tư vấn sai nhu cầu', 'CONSULTING', 'Chất lượng tư vấn', 'HIGH', false, 'Tư vấn không khớp với nhu cầu khách đã nêu.'],
+    ['OBJ_001', 'Không khai thác nguyên nhân phản đối', 'OBJECTION_HANDLING', 'Xử lý phản đối', 'MEDIUM', false, 'Chưa tìm hiểu nguyên nhân khi khách phản đối.'],
+    ['OBJ_002', 'Xử lý phản đối không phù hợp', 'OBJECTION_HANDLING', 'Xử lý phản đối', 'MEDIUM', false, 'Ví dụ gây áp lực hoặc cung cấp thông tin mâu thuẫn.'],
+    ['OBJ_003', 'Bỏ khách sau khi khách phản đối', 'OBJECTION_HANDLING', 'Xử lý phản đối', 'HIGH', false, 'Dừng chăm sóc khi khách chưa từ chối rõ ràng.'],
+    ['QUOTE_001', 'Chưa báo giá >24h', 'QUOTATION', 'Báo giá', 'HIGH', false, 'Lead nằm trong nguồn Chưa báo giá >24h trên dashboard.'],
+    ['QUOTE_002', 'Báo giá sai nhu cầu khách', 'QUOTATION', 'Báo giá', 'HIGH', false, 'Báo giá không phù hợp với nhu cầu khách.'],
+    ['QUOTE_003', 'Báo giá thiếu thông tin', 'QUOTATION', 'Báo giá', 'MEDIUM', false, 'Báo giá thiếu thông tin cần thiết.'],
+    ['QUOTE_004', 'Có báo giá nhưng không follow-up / không push', 'QUOTATION', 'Báo giá', 'MEDIUM', false, 'Gửi báo giá xong không follow-up hoặc không có câu push.'],
+    ['QUOTE_005', 'Báo giá không có câu chốt chuẩn', 'QUOTATION', 'Báo giá', 'MEDIUM', false, 'Hội thoại không có hai câu chốt chuẩn.'],
+    ['QUOTE_006', 'Báo giá sai mức duyệt giá', 'QUOTATION', 'Báo giá', 'HIGH', false, 'Báo giá không đúng mức đã được duyệt.'],
+    ['CRM_001', 'Sai tag Zalo / sai cú pháp tên', 'CRM_PROCESS', 'Tag / CRM / cập nhật data', 'MEDIUM', false, 'Không gắn tag Zalo hoặc đặt tên sai cú pháp.'],
+    ['CRM_002', 'Thiếu thông tin khách (địa chỉ, đối tượng)', 'CRM_PROCESS', 'Tag / CRM / cập nhật data', 'LOW', false, 'Thiếu địa chỉ chi tiết hoặc đối tượng trên CRM.'],
+    ['CRM_003', 'Không cập nhật / sai trạng thái Getfly', 'CRM_PROCESS', 'Tag / CRM / cập nhật data', 'MEDIUM', false, 'Sai trạng thái CRM so với thực tế.'],
+    ['CRM_004', 'Sai người phụ trách', 'CRM_PROCESS', 'Tag / CRM / cập nhật data', 'MEDIUM', false, 'Người phụ trách trên CRM không đúng.'],
+    ['CRM_005', 'Không note nhu cầu mới / phản ứng khách sau báo giá', 'CRM_PROCESS', 'Tag / CRM / cập nhật data', 'LOW', false, 'Chưa ghi nhận nhu cầu mới hoặc phản ứng khách sau báo giá.'],
+    ['RISK_001', 'Customer complaint', 'CUSTOMER_RISK', 'Rủi ro mất khách', 'HIGH', false, 'Có khiếu nại từ khách hàng.'],
+    ['RISK_002', 'Customer threaten cancel', 'CUSTOMER_RISK', 'Rủi ro mất khách', 'HIGH', false, 'Khách có tín hiệu đe doạ hủy.'],
+    ['RISK_003', 'Khách có nguy cơ mất đơn', 'CUSTOMER_RISK', 'Rủi ro mất khách', 'HIGH', false, 'Khách có nguy cơ mất đơn.'],
+    ['RISK_004', 'Sai thông tin tư vấn', 'CUSTOMER_RISK', 'Rủi ro mất khách', 'HIGH', false, 'Thông tin tư vấn không chính xác.'],
+    ['RISK_005', 'Delivery/service issue', 'SERVICE', 'Giao hàng / hậu mãi / dịch vụ', 'HIGH', false, 'Có vấn đề về giao hàng, hậu mãi hoặc dịch vụ.'],
+    ['COMP_001', 'Không có câu chào khi tiếp cận khách online', 'COMPLIANCE', 'Quy trình bắt buộc', 'MEDIUM', false, 'Không có câu chào khi tiếp cận khách online.'],
+    ['COMP_002', 'Tự làm báo giá chưa được duyệt', 'COMPLIANCE', 'Quy trình bắt buộc', 'HIGH', false, 'Tự làm báo giá chưa được duyệt.'],
+    ['COMP_003', 'Không thực hiện action đã hứa sau review', 'COMPLIANCE', 'Quy trình bắt buộc', 'HIGH', true, 'Không thực hiện action đã hứa sau review.'],
+    ['COMP_004', 'Không liên hệ khách team chat chuyển xuống', 'COMPLIANCE', 'Quy trình bắt buộc', 'HIGH', true, 'Không có trường hợp miễn trừ khi team chat chuyển khách xuống.'],
   ];
+  await client.query(
+    `UPDATE issue_definitions SET is_current = FALSE
+      WHERE issue_code = ANY($1)`,
+    [['NO_QUOTATION', 'QUOTED_NOT_ORDERED', 'FOLLOW_UP_MISSED', 'CRM_DATA_INCOMPLETE']]
+  );
   for (const definition of defaults) {
     await client.query(
       `INSERT INTO issue_definitions (id, issue_code, issue_name, issue_group_code, issue_group_name, severity, hard_fail, is_definition_complete, is_current, version, recheck_guidance_template)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, TRUE, 'v1.1', $8)
-       ON CONFLICT (issue_code) DO NOTHING`,
+       VALUES ('SHEET-' || $1, $1, $2, $3, $4, $5, $6, TRUE, TRUE, 'sales-sheet-v1', $7)
+       ON CONFLICT (issue_code) DO UPDATE SET
+         issue_name = EXCLUDED.issue_name,
+         issue_group_code = EXCLUDED.issue_group_code,
+         issue_group_name = EXCLUDED.issue_group_name,
+         severity = EXCLUDED.severity,
+         hard_fail = EXCLUDED.hard_fail,
+         is_definition_complete = TRUE,
+         is_current = TRUE,
+         version = EXCLUDED.version,
+         recheck_guidance_template = EXCLUDED.recheck_guidance_template`,
       definition
     );
   }
