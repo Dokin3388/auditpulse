@@ -154,28 +154,28 @@ export async function materializeQueueForDate(client: pg.PoolClient, auditDate: 
   const date = auditDate && AUDIT_DATE_PATTERN.test(auditDate) ? auditDate : vietnamBusinessDate();
   const ruleItems = await materializeRuleItems(client, date);
 
-  const [sourceRows, customers, sales, assignments] = await Promise.all([
-    client.query<{ payload: Record<string, string> }>(
-      `SELECT payload FROM google_sheet_row_state
-       WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
-    ),
-    client.query<{ id: string; code: string; name: string; phone: string | null }>(
-      `SELECT id, code, name, phone FROM customers`
-    ),
-    client.query<{ id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>(
-      `SELECT u.id, u.name, sp.sale_code AS "saleCode", sp.team_id AS "teamId", t.name AS "teamName"
-       FROM app_users u JOIN sales_profiles sp ON sp.id = u.id
-       LEFT JOIN teams t ON t.id = sp.team_id
-       WHERE u.role = 'SALE'`
-    ),
-    client.query<{ saleId: string; auditorId: string; effectiveFrom: string; effectiveTo: string | null; auditorName: string; auditorTeam: string | null }>(
-      // Date-based (not the stored is_active flag, which goes stale and ignores future-dated rows).
-      `SELECT a.sale_id AS "saleId", a.auditor_id AS "auditorId",
-              to_char(a.effective_from, 'YYYY-MM-DD') AS "effectiveFrom", to_char(a.effective_to, 'YYYY-MM-DD') AS "effectiveTo",
-              u.name AS "auditorName", NULL::text AS "auditorTeam"
-       FROM auditor_assignments a JOIN app_users u ON u.id = a.auditor_id`
-    ),
-  ]);
+  // A transaction client runs one query at a time. Running these in Promise.all
+  // produces pg's concurrent-query warning and can leave the daily refresh flaky.
+  const sourceRows = await client.query<{ payload: Record<string, string> }>(
+    `SELECT payload FROM google_sheet_row_state
+     WHERE source_id = 'sale-issues' AND sheet_name = 'fact_issue_log'`
+  );
+  const customers = await client.query<{ id: string; code: string; name: string; phone: string | null }>(
+    `SELECT id, code, name, phone FROM customers`
+  );
+  const sales = await client.query<{ id: string; name: string; saleCode: string; teamId: string | null; teamName: string | null }>(
+    `SELECT u.id, u.name, sp.sale_code AS "saleCode", sp.team_id AS "teamId", t.name AS "teamName"
+     FROM app_users u JOIN sales_profiles sp ON sp.id = u.id
+     LEFT JOIN teams t ON t.id = sp.team_id
+     WHERE u.role = 'SALE'`
+  );
+  const assignments = await client.query<{ saleId: string; auditorId: string; effectiveFrom: string; effectiveTo: string | null; auditorName: string; auditorTeam: string | null }>(
+    // Date-based (not the stored is_active flag, which goes stale and ignores future-dated rows).
+    `SELECT a.sale_id AS "saleId", a.auditor_id AS "auditorId",
+            to_char(a.effective_from, 'YYYY-MM-DD') AS "effectiveFrom", to_char(a.effective_to, 'YYYY-MM-DD') AS "effectiveTo",
+            u.name AS "auditorName", NULL::text AS "auditorTeam"
+     FROM auditor_assignments a JOIN app_users u ON u.id = a.auditor_id`
+  );
 
   const normalizeLookupKey = (value: string) => {
     const trimmed = value.trim().toLowerCase();
