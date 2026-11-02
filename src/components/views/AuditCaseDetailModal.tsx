@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
-import type { AuditQueueItem, Evidence } from '../../types';
+import type { AuditQueueItem } from '../../types';
 import { Modal } from '../common/Modal';
 import { RiskTagBadge, SeverityBadge } from '../common/Badge';
 import { EvidencePreview } from '../common/EvidencePreview';
@@ -39,7 +39,6 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
 
   const [selectedIssueCodes, setSelectedIssueCodes] = useState<string[]>([]);
   const [generalNotes, setGeneralNotes] = useState('');
-  const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
@@ -64,11 +63,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
     );
   };
 
-  const handleAddEvidence = (evi: Evidence) => {
-    setEvidences((prev) => [...prev, evi]);
-  };
-
-  const handleCompleteAudit = (forceFailWithIssues?: boolean) => {
+  const handleCompleteAudit = async (forceFailWithIssues?: boolean) => {
     setIsSubmitting(true);
     setFeedbackMsg(null);
 
@@ -76,11 +71,11 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
       ? [issueDefinitions[0]?.issueCode || 'ISSUE-01']
       : selectedIssueCodes;
 
-    const result = createAuditCaseForQueue(
+    const result = await createAuditCaseForQueue(
       queueItem.id,
       issuesToSubmit,
       generalNotes,
-      evidences
+      []
     );
 
     setIsSubmitting(false);
@@ -367,9 +362,7 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
 
           {/* Bằng chứng phát hiện */}
           <EvidencePreview
-            evidenceList={evidences}
-            allowAdd={canAudit}
-            onAddEvidence={handleAddEvidence}
+            evidenceList={[]}
             title="Bằng chứng sai phạm phát hiện (Evidence)"
           />
 

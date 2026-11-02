@@ -20,9 +20,6 @@ import type {
   Quotation,
   SalesOrder,
   AuditCase,
-  AuditIssue,
-  AuditCaseStatus,
-  QueueItemStatus,
   RescuedAttribution,
 } from '../types';
 
@@ -40,6 +37,7 @@ import {
 } from './mockData';
 import {
   getAuditQueue,
+  completeAuditQueueItem,
   getAppUsers,
   getIssueDefinitions,
   materializeAuditQueue,
@@ -106,7 +104,7 @@ export interface AuditStoreContextType {
     selectedIssueCodes: string[],
     generalNotes: string,
     evidences: Evidence[]
-  ) => { success: boolean; message: string; caseId?: string };
+  ) => Promise<{ success: boolean; message: string; caseId?: string }>;
   triggerManualSync: (sourceId: string) => { success: boolean; message: string };
   reassignQueueItem: (queueItemId: string, newAuditorId: string, reason: string) => { success: boolean; message: string };
 }
@@ -201,7 +199,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
   // Core reactive entities
   const [queueItems, setQueueItems] = useState<AuditQueueItem[]>([]);
-  const [auditCases, setAuditCases] = useState<AuditCase[]>([]);
+  const [auditCases] = useState<AuditCase[]>([]);
   const [correctiveActions, setCorrectiveActions] = useState<CorrectiveAction[]>([]);
   const [issueDefinitions, setIssueDefinitions] = useState<IssueDefinition[]>([]);
   const [auditorAssignments, setAuditorAssignments] = useState<AuditorAssignment[]>([]);
@@ -330,7 +328,9 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       );
       const count = auditorRescued.length;
       const value = auditorRescued.reduce((sum, r) => sum + r.orderValue, 0);
-      const auditedCount = auditCases.filter((item) => item.auditorId === auditorId).length;
+      const auditedCount = queueItems.filter(
+        (item) => item.assignedAuditorId === auditorId && ['COMPLETED_PASS', 'COMPLETED_FAIL'].includes(item.status)
+      ).length;
       const rescueRate = auditedCount > 0 ? Math.round((count / auditedCount) * 1000) / 10 : 0;
 
       return {
@@ -353,7 +353,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
         rescueRate,
       };
     });
-  }, [allUsers, auditCases, rescuedOrders]);
+  }, [allUsers, queueItems, rescuedOrders]);
 
   // SALE FLOW: Mark Action as Done (Strict RBAC: Only assigned sale owner)
   const saleMarkActionDone = (actionId: string, notes: string, evidence?: Evidence) => {
@@ -666,189 +666,23 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     );
   };
 
-  // AUDIT EXECUTION FLOW: Complete Audit Case from Queue Item
-  // Invariants enforced:
-  // 1. Strict RBAC: Only assigned auditor or Head Auditor/Admin.
-  // 2. Persists immutable AuditCase with snapshot sale/team/auditor/customer.
-  // 3. Persists AuditIssue records for each issue.
-  // 4. Anti-duplicate action check: If an action with same customerId + issueCode is currently
-  //    in ['OPEN', 'SALE_MARKED_DONE', 'IN_RECHECK', 'REOPENED'], DO NOT create a new action!
-  //    Links to existing action and sets queue item to "Đang theo dõi".
-  const createAuditCaseForQueue = (
+  // AUDIT EXECUTION FLOW: the Queue -> Action hand-off must be saved first;
+  // keeping this only in React state made the next screen look empty on refresh.
+  const createAuditCaseForQueue = async (
     queueItemId: string,
     selectedIssueCodes: string[],
     generalNotes: string,
-    evidences: Evidence[]
+    _evidences: Evidence[]
   ) => {
-    const queueItem = queueItems.find((q) => q.id === queueItemId);
-    if (!queueItem) return { success: false, message: 'Không tìm thấy Queue Item' };
-
-    // Strict RBAC Permission Gate
-    const isAssignedAuditor =
-      currentUser.role === 'AUDITOR' && currentUser.auditorId === queueItem.assignedAuditorId;
-    const isHeadOrAdmin = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
-    if (!isAssignedAuditor && !isHeadOrAdmin) {
-      return {
-        success: false,
-        message: `Từ chối quyền: Chỉ Auditor được gán (${queueItem.assignedAuditorName || 'Chưa gán'}) hoặc Head Auditor mới có quyền chấm case này.`,
-      };
+    try {
+      const result = await completeAuditQueueItem({ queueItemId, issueCodes: selectedIssueCodes, generalNotes });
+      const [latestQueue, latestActions] = await Promise.all([getAuditQueue(), getCorrectiveActions()]);
+      setQueueItems(latestQueue);
+      setCorrectiveActions(latestActions);
+      return { success: true, message: result.message, caseId: result.caseId };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Không thể chốt ca audit.' };
     }
-
-    const caseId = `CASE-${Date.now()}`;
-    const isPass = selectedIssueCodes.length === 0;
-    const newStatus: QueueItemStatus = isPass ? 'COMPLETED_PASS' : 'COMPLETED_FAIL';
-    const caseStatus: AuditCaseStatus = isPass ? 'COMPLETED_PASS' : 'COMPLETED_FAIL';
-
-    // Prepare immutable AuditIssues
-    const auditIssues: AuditIssue[] = selectedIssueCodes.map((code, idx) => {
-      const issueDef = issueDefinitions.find((def) => def.issueCode === code);
-      return {
-        id: `ISSUE-${Date.now()}-${idx}`,
-        caseId,
-        issueCode: code,
-        issueName: issueDef?.issueName || code,
-        groupName: issueDef?.issueGroupName || 'Vận hành chung',
-        severity: issueDef?.severity || 'MEDIUM',
-        hardFail: issueDef?.hardFail ?? false,
-        notes: generalNotes || 'Ghi nhận lỗi từ phiên audit queue ngày D.',
-        evidenceIds: evidences.map((e) => e.id),
-        evidenceList: evidences,
-      };
-    });
-
-    const newActionsToCreate: CorrectiveAction[] = [];
-    let linkedActionId: string | undefined = undefined;
-    let duplicatePreventedCount = 0;
-
-    // Check anti-duplicate rule for each issue
-    for (let i = 0; i < auditIssues.length; i++) {
-      const issue = auditIssues[i];
-      const code = issue.issueCode;
-
-      // Look for existing open action for same customer + issueCode
-      const existingOpenAction = correctiveActions.find(
-        (act) =>
-          act.customerId === queueItem.customerId &&
-          act.issueCode === code &&
-          ['OPEN', 'SALE_MARKED_DONE', 'IN_RECHECK', 'REOPENED'].includes(act.status)
-      );
-
-      if (existingOpenAction) {
-        // Prevent duplicate action per Spec Section 4
-        issue.correctiveActionId = existingOpenAction.id;
-        if (!linkedActionId) linkedActionId = existingOpenAction.id;
-        duplicatePreventedCount++;
-
-        addTrailEvent(
-          'ACTION_DUPLICATE_PREVENTED',
-          `Phát hiện Action ${existingOpenAction.code} đang mở cho cùng khách ${queueItem.customerName} và lỗi [${code}]. Không tạo trùng lặp; liên kết theo dõi.`,
-          `Action ID: ${existingOpenAction.id} (Trạng thái: ${existingOpenAction.status})`
-        );
-      } else {
-        // Create new CorrectiveAction referencing caseId and issue
-        const actionCode = `ACT-${new Date().getFullYear()}-${1000 + correctiveActions.length + newActionsToCreate.length + 1}`;
-        const actionId = `ACT-ID-${Date.now()}-${newActionsToCreate.length}`;
-        issue.correctiveActionId = actionId;
-        if (!linkedActionId) linkedActionId = actionId;
-
-        const issueDef = issueDefinitions.find((def) => def.issueCode === code);
-        const newAction: CorrectiveAction = {
-          id: actionId,
-          code: actionCode,
-          caseId,
-          queueItemId,
-          customerId: queueItem.customerId,
-          customerName: queueItem.customerName,
-          customerPhone: queueItem.customerPhone,
-          saleId: queueItem.saleId,
-          saleName: queueItem.saleName,
-          teamId: queueItem.teamId,
-          teamName: queueItem.teamName,
-          auditorId: queueItem.assignedAuditorId || currentUser.auditorId || 'AUD-01',
-          auditorName: queueItem.assignedAuditorName || currentUser.name,
-          issueCode: code,
-          issueName: issue.issueName,
-          severity: issue.severity,
-          status: 'OPEN',
-          createdAt: new Date().toISOString(),
-          dueDate: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
-          slaRuleVersion: queueItem.ruleVersion,
-          completionCriteria: issueDef?.recheckGuidanceTemplate || 'Khắc phục tồn tại và cập nhật CRM.',
-          guidanceNotes: generalNotes,
-          saleMarkedDone: false,
-          saleEvidenceList: [],
-          rechecks: [],
-          auditorEvidenceList: evidences,
-          isOverdue: false,
-        };
-
-        newActionsToCreate.push(newAction);
-      }
-    }
-
-    // Immutable Audit Case snapshot
-    const newAuditCase: AuditCase = {
-      id: caseId,
-      queueItemId,
-      auditorId: queueItem.assignedAuditorId || currentUser.auditorId || 'AUD-01',
-      auditorName: queueItem.assignedAuditorName || currentUser.name,
-      status: caseStatus,
-      startedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-      completedAt: new Date().toISOString(),
-      generalNotes,
-      issues: auditIssues,
-      evidenceList: evidences,
-      snapshotCustomerId: queueItem.customerId,
-      snapshotCustomerName: queueItem.customerName,
-      snapshotSaleId: queueItem.saleId,
-      snapshotSaleName: queueItem.saleName,
-      snapshotTeamId: queueItem.teamId,
-      snapshotTeamName: queueItem.teamName,
-      snapshotAuditorId: queueItem.assignedAuditorId || currentUser.auditorId || 'AUD-01',
-      snapshotAuditorName: queueItem.assignedAuditorName || currentUser.name,
-      ruleVersion: queueItem.ruleVersion,
-    };
-
-    // Commit changes to state
-    setAuditCases((prev) => [newAuditCase, ...prev]);
-
-    if (newActionsToCreate.length > 0) {
-      setCorrectiveActions((prev) => [...newActionsToCreate, ...prev]);
-    }
-
-    // Update queue item status and activeActionId
-    setQueueItems((prev) =>
-      prev.map((item) =>
-        item.id === queueItemId
-          ? {
-              ...item,
-              status: newStatus,
-              activeActionId: linkedActionId || item.activeActionId,
-            }
-          : item
-      )
-    );
-
-    addTrailEvent(
-      isPass ? 'AUDIT_CASE_PASSED' : 'AUDIT_CASE_FAILED',
-      `Auditor ${currentUser.name} hoàn tất audit khách ${queueItem.customerName} (${isPass ? 'ĐẠT' : 'KHÔNG ĐẠT'}).`,
-      isPass
-        ? 'Không phát hiện lỗi vận hành.'
-        : `Phát hiện ${selectedIssueCodes.length} lỗi. Tạo mới: ${newActionsToCreate.length} action. Tái sử dụng/chống trùng: ${duplicatePreventedCount} action.`
-    );
-
-    let feedback = isPass
-      ? 'Case được ghi nhận ĐẠT (COMPLETED_PASS).'
-      : `Case KHÔNG ĐẠT. Đã tạo ${newActionsToCreate.length} Action mới.`;
-    if (duplicatePreventedCount > 0) {
-      feedback += ` Phát hiện ${duplicatePreventedCount} action cũ đang mở (chống tạo trùng, chuyển sang "Đang theo dõi").`;
-    }
-
-    return {
-      success: true,
-      message: feedback,
-      caseId,
-    };
   };
 
   // HEAD AUDITOR: Reassign individual Queue Item (Strict RBAC: Head Auditor/Admin only)

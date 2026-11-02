@@ -240,6 +240,26 @@ export async function getAuditQueue(): Promise<AuditQueueItem[]> {
   }));
 }
 
+export async function completeAuditQueueItem(input: {
+  queueItemId: string;
+  issueCodes: string[];
+  generalNotes: string;
+}): Promise<{ caseId: string; createdActions: number; linkedActionId: string | null; isPass: boolean; message: string }> {
+  const response = await fetch(`/api/queue/${encodeURIComponent(input.queueItemId)}/complete-audit`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issueCodes: input.issueCodes, generalNotes: input.generalNotes }),
+  });
+  const payload = await response.json().catch(() => null) as {
+    data?: { caseId: string; createdActions: number; linkedActionId: string | null; isPass: boolean };
+    message?: string;
+    error?: string;
+  } | null;
+  if (!response.ok || !payload?.data) throw new Error(payload?.error || 'Không thể chốt ca audit.');
+  return { ...payload.data, message: payload.message || 'Đã chốt ca audit.' };
+}
+
 export async function getCorrectiveActions(): Promise<CorrectiveAction[]> {
   const actions = await getList<Partial<CorrectiveAction>>('/api/actions');
   return actions.map((action) => ({

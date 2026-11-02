@@ -43,10 +43,12 @@ export const AuditorPerformanceView: React.FC = () => {
             onChange={(e) => setSelectedAuditorId(e.target.value)}
             className="text-xs px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400 font-medium"
           >
-            <option value="ALL">Toàn bộ 3 Auditor</option>
-            <option value="AUD-01">Linh Nguyễn (AUD-01)</option>
-            <option value="AUD-02">Huy Trần (AUD-02)</option>
-            <option value="AUD-03">Trang Đỗ (AUD-03)</option>
+            <option value="ALL">Toàn bộ {performanceMetrics.length} Auditor</option>
+            {performanceMetrics.map((auditor) => (
+              <option key={auditor.auditorId} value={auditor.auditorId}>
+                {auditor.auditorName} ({auditor.auditorId})
+              </option>
+            ))}
           </select>
         </div>
       </div>

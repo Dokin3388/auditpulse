@@ -131,6 +131,23 @@ app.all('/api/auth/*splat', authHandler);
 
 type AppActor = { id: string; email: string; name: string; role: string; avatarUrl: string | null };
 
+const ensureDefaultIssueDefinitions = async (client: { query: (text: string, values?: unknown[]) => Promise<unknown> }) => {
+  const defaults = [
+    ['ISSUE-NO-QUOTE', 'NO_QUOTATION', 'Chưa báo giá khách hàng', 'SALE_EXECUTION', 'Thực thi Sale', 'HIGH', true, 'Kiểm tra lịch sử tư vấn và cập nhật báo giá hoặc lý do chưa thể báo giá.'],
+    ['ISSUE-NO-ORDER', 'QUOTED_NOT_ORDERED', 'Báo giá chưa chốt đơn', 'SALE_EXECUTION', 'Thực thi Sale', 'HIGH', false, 'Kiểm tra follow-up, nhu cầu khách và kế hoạch chốt đơn tiếp theo.'],
+    ['ISSUE-FOLLOW-UP', 'FOLLOW_UP_MISSED', 'Chưa follow-up đúng hạn', 'SALE_EXECUTION', 'Thực thi Sale', 'MEDIUM', false, 'Bổ sung lịch sử follow-up và thống nhất thời điểm liên hệ lại với khách.'],
+    ['ISSUE-DATA-QUALITY', 'CRM_DATA_INCOMPLETE', 'Thông tin khách hàng chưa đầy đủ', 'DATA_QUALITY', 'Chất lượng dữ liệu', 'LOW', false, 'Hoàn thiện số điện thoại, nguồn khách và thông tin cần thiết trên CRM.'],
+  ];
+  for (const definition of defaults) {
+    await client.query(
+      `INSERT INTO issue_definitions (id, issue_code, issue_name, issue_group_code, issue_group_name, severity, hard_fail, is_definition_complete, is_current, version, recheck_guidance_template)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, TRUE, 'v1.1', $8)
+       ON CONFLICT (issue_code) DO NOTHING`,
+      definition
+    );
+  }
+};
+
 const getAppActor = async (req: Request): Promise<AppActor | null> => {
   const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
   if (!session?.user?.email) return null;
@@ -221,6 +238,7 @@ app.get('/api/users', async (req: Request, res: Response) => {
 
 app.get('/api/issue-definitions', async (_req: Request, res: Response) => {
   try {
+    await withTransaction(ensureDefaultIssueDefinitions);
     const result = await query(`
       SELECT id, issue_code AS "issueCode", issue_name AS "issueName",
              issue_group_code AS "issueGroupCode", issue_group_name AS "issueGroupName",
@@ -477,6 +495,137 @@ app.get('/api/queue', async (req: Request, res: Response) => {
   }
 });
 
+// Complete one audit case and persist every downstream record in the same
+// transaction. This is the hand-off point from Queue -> Sale Action -> Recheck.
+app.post('/api/queue/:id/complete-audit', async (req: Request, res: Response) => {
+  const actor = res.locals.actor as AppActor;
+  const queueItemId = req.params.id;
+  const body = (req.body ?? {}) as { issueCodes?: unknown; generalNotes?: unknown };
+  const issueCodes = Array.isArray(body.issueCodes)
+    ? [...new Set(body.issueCodes.filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean))]
+    : [];
+  const generalNotes = typeof body.generalNotes === 'string' ? body.generalNotes.trim() : '';
+
+  try {
+    const result = await withTransaction(async (client) => {
+      await ensureDefaultIssueDefinitions(client);
+      const queueResult = await client.query<{
+        id: string; auditDate: string; customerId: string; saleId: string; teamId: string;
+        assignedAuditorId: string | null; status: string; customerName: string; saleName: string; teamName: string; auditorName: string | null; ruleVersion: string;
+      }>(
+        `SELECT q.id, q.audit_date::text AS "auditDate", q.customer_id AS "customerId", q.sale_id AS "saleId", q.team_id AS "teamId",
+                q.assigned_auditor_id AS "assignedAuditorId", q.status,
+                q.snapshot_customer_name AS "customerName", q.snapshot_sale_name AS "saleName", q.snapshot_team_name AS "teamName",
+                q.snapshot_auditor_name AS "auditorName", q.rule_version AS "ruleVersion"
+           FROM audit_queue_items q
+          WHERE q.id = $1
+          FOR UPDATE`,
+        [queueItemId]
+      );
+      const queueItem = queueResult.rows[0];
+      if (!queueItem) throw new Error('Không tìm thấy ca audit.');
+      const isHead = actor.role === 'HEAD_AUDITOR' || actor.role === 'ADMIN';
+      const isAssignedAuditor = actor.role === 'AUDITOR' && queueItem.assignedAuditorId === actor.id;
+      if (!isHead && !isAssignedAuditor) throw new Error('Chỉ Auditor được phân công hoặc Head Auditor mới được chốt ca audit này.');
+      if (['COMPLETED_PASS', 'COMPLETED_FAIL', 'SKIPPED', 'BLOCKED'].includes(queueItem.status)) {
+        throw new Error('Ca audit này đã được chốt trước đó.');
+      }
+      if (issueCodes.length > 0 && !queueItem.assignedAuditorId) {
+        throw new Error('Hãy phân công Auditor trước khi giao Action khắc phục cho Sale.');
+      }
+
+      const definitions = issueCodes.length
+        ? await client.query<{ id: string; issueCode: string; issueName: string; groupName: string; severity: string; hardFail: boolean; guidance: string | null }>(
+          `SELECT id, issue_code AS "issueCode", issue_name AS "issueName", issue_group_name AS "groupName", severity,
+                  hard_fail AS "hardFail", recheck_guidance_template AS guidance
+             FROM issue_definitions
+            WHERE is_current = true AND issue_code = ANY($1)`,
+          [issueCodes]
+        )
+        : { rows: [] as Array<{ id: string; issueCode: string; issueName: string; groupName: string; severity: string; hardFail: boolean; guidance: string | null }> };
+      if (definitions.rows.length !== issueCodes.length) {
+        const known = new Set(definitions.rows.map((definition) => definition.issueCode));
+        throw new Error(`Có mã lỗi không hợp lệ: ${issueCodes.filter((code) => !known.has(code)).join(', ')}.`);
+      }
+
+      const caseId = `CASE-${randomBytes(12).toString('hex')}`;
+      const isPass = issueCodes.length === 0;
+      const assignedAuditorId = queueItem.assignedAuditorId || actor.id;
+      const assignedAuditorName = queueItem.auditorName || actor.name;
+      const caseStatus = isPass ? 'COMPLETED_PASS' : 'COMPLETED_FAIL';
+      await client.query(
+        `INSERT INTO audit_cases (id, queue_item_id, auditor_id, status, started_at, completed_at, general_notes,
+                                  snapshot_customer_id, snapshot_customer_name, snapshot_sale_id, snapshot_sale_name,
+                                  snapshot_team_id, snapshot_team_name, snapshot_auditor_id, snapshot_auditor_name, rule_version)
+         VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [caseId, queueItem.id, actor.id, caseStatus, generalNotes || null, queueItem.customerId, queueItem.customerName,
+          queueItem.saleId, queueItem.saleName, queueItem.teamId, queueItem.teamName, assignedAuditorId, assignedAuditorName, queueItem.ruleVersion]
+      );
+
+      let activeActionId: string | null = null;
+      let createdActions = 0;
+      for (const definition of definitions.rows) {
+        const issueId = `ISSUE-${randomBytes(12).toString('hex')}`;
+        await client.query(
+          `INSERT INTO audit_issues (id, case_id, issue_code, issue_name, group_name, severity, hard_fail, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [issueId, caseId, definition.issueCode, definition.issueName, definition.groupName, definition.severity, definition.hardFail, generalNotes || null]
+        );
+        const existingAction = await client.query<{ id: string }>(
+          `SELECT id FROM corrective_actions
+            WHERE customer_id = $1 AND issue_code = $2
+              AND status IN ('OPEN', 'SALE_MARKED_DONE', 'IN_RECHECK', 'REOPENED')
+            ORDER BY created_at DESC LIMIT 1`,
+          [queueItem.customerId, definition.issueCode]
+        );
+        const actionId = existingAction.rows[0]?.id || `ACTION-${randomBytes(12).toString('hex')}`;
+        if (!existingAction.rows[0]) {
+          const actionCode = `ACT-${queueItem.auditDate.replaceAll('-', '')}-${randomBytes(4).toString('hex').toUpperCase()}`;
+          await client.query(
+            `INSERT INTO corrective_actions (id, code, case_id, issue_id, queue_item_id, customer_id, sale_id, auditor_id,
+                                             issue_code, issue_name, severity, status, due_date, sla_rule_version,
+                                             completion_criteria, guidance_notes, snapshot_customer_name, snapshot_sale_name,
+                                             snapshot_team_name, snapshot_auditor_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'OPEN', NOW() + INTERVAL '48 hours', $12, $13, $14, $15, $16, $17, $18)`,
+            [actionId, actionCode, caseId, issueId, queueItem.id, queueItem.customerId, queueItem.saleId, assignedAuditorId,
+              definition.issueCode, definition.issueName, definition.severity, queueItem.ruleVersion,
+              definition.guidance || 'Khắc phục tồn tại và cập nhật trạng thái cho Auditor.', generalNotes || null,
+              queueItem.customerName, queueItem.saleName, queueItem.teamName, assignedAuditorName]
+          );
+          createdActions += 1;
+        }
+        await client.query(`UPDATE audit_issues SET corrective_action_id = $1 WHERE id = $2`, [actionId, issueId]);
+        activeActionId ||= actionId;
+      }
+
+      await client.query(
+        `UPDATE audit_queue_items
+            SET status = $1, active_action_id = $2
+          WHERE id = $3`,
+        [isPass ? 'COMPLETED_PASS' : 'COMPLETED_FAIL', activeActionId, queueItem.id]
+      );
+      await client.query(
+        `INSERT INTO audit_trail_events (id, actor_name, actor_role, actor_user_id, action_type, description, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+        [`TRL-AUDIT-${randomBytes(9).toString('hex')}`, actor.name, actor.role, actor.id,
+          isPass ? 'AUDIT_CASE_PASSED' : 'AUDIT_CASE_FAILED',
+          `${actor.name} đã chốt audit khách ${queueItem.customerName}: ${isPass ? 'ĐẠT' : 'KHÔNG ĐẠT'}.`,
+          JSON.stringify({ queueItemId: queueItem.id, caseId, issueCodes, createdActions, activeActionId })]
+      );
+      return { caseId, createdActions, linkedActionId: activeActionId, isPass };
+    });
+    res.status(201).json({
+      success: true,
+      data: result,
+      message: result.isPass
+        ? 'Đã chốt Case ĐẠT và lưu vào hệ thống.'
+        : `Đã chốt Case KHÔNG ĐẠT và tạo ${result.createdActions} Action khắc phục.`,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Không thể chốt ca audit.' });
+  }
+});
+
 // Head Auditor uploads tomorrow's manually curated worklist. Each valid row is
 // assigned from the effective sale-to-auditor mapping on the audit date.
 app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
@@ -556,6 +705,7 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
     ).join(', ');
     const normaliseKey = (value: string) => value.trim().toLocaleLowerCase('vi-VN');
     const result = await withTransaction(async (client) => {
+      await ensureDefaultIssueDefinitions(client);
       type Owner = { saleId: string; saleName: string; teamId: string; teamName: string };
       const saleInputs = [...new Set(intakeRows.map((row) => normaliseKey(row.saleInput)))];
       const existingOwners = await client.query<Owner & { saleCode: string }>(
@@ -618,7 +768,7 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
       if (newSales.length) {
         await client.query(
           `INSERT INTO app_users (id, email, name, role, is_active, login_enabled) VALUES ${sqlValues(newSales.length, 6)}`,
-          newSales.flatMap((sale) => [sale.saleId, sale.email, sale.saleName, 'SALE', false, false])
+          newSales.flatMap((sale) => [sale.saleId, sale.email, sale.saleName, 'SALE', true, false])
         );
         await client.query(
           `INSERT INTO sales_profiles (id, sale_code, team_id) VALUES ${sqlValues(newSales.length, 3)}`,
