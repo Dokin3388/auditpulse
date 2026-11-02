@@ -527,7 +527,9 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
         const owner = await client.query<{ saleId: string; saleName: string; teamId: string; teamName: string }>(
           `SELECT u.id AS "saleId", u.name AS "saleName", t.id AS "teamId", t.name AS "teamName"
              FROM app_users u JOIN sales_profiles sp ON sp.id = u.id JOIN teams t ON t.id = sp.team_id
-            WHERE sp.sale_code = $1 AND t.code = $2 AND u.role = 'SALE' AND u.is_active = true`,
+            WHERE (sp.sale_code = $1 OR lower(u.name) = lower($1))
+              AND (t.code = $2 OR lower(t.name) = lower($2))
+              AND u.role = 'SALE' AND u.is_active = true`,
           [String(data.sale_code).trim(), String(data.team_code).trim()]
         );
         if (!owner.rows[0]) {
