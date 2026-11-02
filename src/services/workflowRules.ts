@@ -55,10 +55,12 @@ export function canAuditorStartRecheck(
   action: Pick<CorrectiveAction, 'status' | 'auditorId' | 'auditorName'>,
   user: Pick<UserProfile, 'role' | 'auditorId'>
 ): ValidationResult {
-  if (user.role !== 'AUDITOR' || user.auditorId !== action.auditorId) {
+  const isHeadAuditor = user.role === 'HEAD_AUDITOR' || user.role === 'ADMIN';
+  const isAssignedAuditor = user.role === 'AUDITOR' && user.auditorId === action.auditorId;
+  if (!isHeadAuditor && !isAssignedAuditor) {
     return {
       valid: false,
-      error: `Từ chối quyền: Chỉ Auditor phụ trách action (${action.auditorName}) mới có quyền bắt đầu recheck.`,
+      error: `Từ chối quyền: Chỉ Auditor phụ trách action (${action.auditorName}) hoặc Head Auditor mới có quyền bắt đầu recheck.`,
     };
   }
 
@@ -86,10 +88,12 @@ export function canAuditorSubmitRecheck(
   result: RecheckResult,
   nextDueDate?: string
 ): ValidationResult {
-  if (user.role !== 'AUDITOR' || user.auditorId !== action.auditorId) {
+  const isHeadAuditor = user.role === 'HEAD_AUDITOR' || user.role === 'ADMIN';
+  const isAssignedAuditor = user.role === 'AUDITOR' && user.auditorId === action.auditorId;
+  if (!isHeadAuditor && !isAssignedAuditor) {
     return {
       valid: false,
-      error: `Từ chối quyền: Chỉ Auditor phụ trách action (${action.auditorName}) mới có quyền kết luận recheck.`,
+      error: `Từ chối quyền: Chỉ Auditor phụ trách action (${action.auditorName}) hoặc Head Auditor mới có quyền kết luận recheck.`,
     };
   }
 

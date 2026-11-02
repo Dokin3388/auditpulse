@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
 import type { AuditQueueItem } from '../../types';
 import {
@@ -31,7 +31,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     filteredQueueItems,
     currentUser,
     allUsers,
-    reassignQueueItem,
+    createAuditorAssignment,
   } = useAuditStore();
 
   // Search & Filter state
@@ -56,6 +56,9 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const [reassignItem, setReassignItem] = useState<AuditQueueItem | null>(null);
   const [newAuditorId, setNewAuditorId] = useState('');
   const [reassignReason, setReassignReason] = useState('');
+  const [reassignError, setReassignError] = useState<string | null>(null);
+  const [isReassigning, setIsReassigning] = useState(false);
+  const [queuePage, setQueuePage] = useState(1);
 
   const availableAuditDates = useMemo(
     () => [...new Set(filteredQueueItems.map((item) => item.auditDate.slice(0, 10)))].sort((a, b) => b.localeCompare(a)),
@@ -122,6 +125,12 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     });
   }, [filteredQueueItems, searchTerm, selectedTeam, selectedAuditor, selectedTag, selectedStatus, effectiveAuditDate]);
 
+  const queuePageSize = 30;
+  const totalQueuePages = Math.max(1, Math.ceil(filteredData.length / queuePageSize));
+  const currentQueuePage = Math.min(queuePage, totalQueuePages);
+  const queuePageStart = (currentQueuePage - 1) * queuePageSize;
+  const pagedData = filteredData.slice(queuePageStart, queuePageStart + queuePageSize);
+
   // Auditor list for reassignment
   const auditorOptions = allUsers.filter((u) => u.role === 'AUDITOR');
   const teamOptions = useMemo(
@@ -133,17 +142,31 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
   const handleOpenReassign = (item: AuditQueueItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setReassignItem(item);
-    setNewAuditorId(item.assignedAuditorId || auditorOptions[0]?.id || '');
+    setNewAuditorId(item.assignedAuditorId || auditorOptions[0]?.auditorId || '');
     setReassignReason('');
+    setReassignError(null);
   };
 
-  const handleConfirmReassign = () => {
-    if (!reassignItem || !reassignReason.trim()) return;
-    reassignQueueItem(reassignItem.id, newAuditorId, reassignReason);
-    setReassignItem(null);
+  const handleConfirmReassign = async () => {
+    if (!reassignItem || !reassignReason.trim() || !newAuditorId || isReassigning) return;
+    setIsReassigning(true);
+    setReassignError(null);
+    const result = await createAuditorAssignment(
+      reassignItem.saleId,
+      newAuditorId,
+      reassignItem.auditDate.slice(0, 10),
+      reassignReason
+    );
+    setIsReassigning(false);
+    if (result.success) {
+      setReassignItem(null);
+    } else {
+      setReassignError(result.message);
+    }
   };
 
   const resetFilters = () => {
+    setQueuePage(1);
     setSearchTerm('');
     setSelectedTeam('ALL');
     setSelectedAuditor('ALL');
@@ -259,7 +282,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             <input
               type="date"
               value={effectiveAuditDate}
-              onChange={(e) => setSelectedAuditDate(e.target.value)}
+              onChange={(e) => {
+                setQueuePage(1);
+                setSelectedAuditDate(e.target.value);
+              }}
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
@@ -271,7 +297,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             </label>
             <select
               value={selectedTeam}
-              onChange={(e) => setSelectedTeam(e.target.value)}
+              onChange={(e) => {
+                setQueuePage(1);
+                setSelectedTeam(e.target.value);
+              }}
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
               <option value="ALL">Tất cả Team</option>
@@ -290,7 +319,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             </label>
             <select
               value={selectedAuditor}
-              onChange={(e) => setSelectedAuditor(e.target.value)}
+              onChange={(e) => {
+                setQueuePage(1);
+                setSelectedAuditor(e.target.value);
+              }}
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
               <option value="ALL">Tất cả Auditor</option>
@@ -312,6 +344,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               value={selectedTag}
               onChange={(e) => {
                 const nextTag = e.target.value;
+                setQueuePage(1);
                 setSelectedTag(nextTag);
                 if (nextTag !== 'ALL') {
                   setSelectedAuditDate('__ALL__');
@@ -333,7 +366,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
             </label>
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => {
+                setQueuePage(1);
+                setSelectedStatus(e.target.value);
+              }}
               className="w-full text-sm px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
               <option value="ALL">Tất cả trạng thái</option>
@@ -356,7 +392,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                 type="text"
                 placeholder="Khách, SĐT, sale..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setQueuePage(1);
+                  setSearchTerm(e.target.value);
+                }}
                 className="w-full text-sm pl-8 pr-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
               />
             </div>
@@ -438,7 +477,7 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredData.map((item) => (
+                {pagedData.map((item) => (
                   <tr
                     key={item.id}
                     className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
@@ -525,6 +564,32 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               </tbody>
             </table>
           </div>
+          {filteredData.length > queuePageSize && (
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800 px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+              <span>
+                Đang xem {queuePageStart + 1}–{Math.min(queuePageStart + queuePageSize, filteredData.length)} / {filteredData.length} case
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQueuePage((page) => Math.max(1, page - 1))}
+                  disabled={currentQueuePage === 1}
+                  className="rounded border border-slate-300 dark:border-slate-700 px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Trước
+                </button>
+                <span>Trang {currentQueuePage}/{totalQueuePages}</span>
+                <button
+                  type="button"
+                  onClick={() => setQueuePage((page) => Math.min(totalQueuePages, page + 1))}
+                  disabled={currentQueuePage === totalQueuePages}
+                  className="rounded border border-slate-300 dark:border-slate-700 px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Sau
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -583,6 +648,12 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               />
             </div>
 
+            {reassignError && (
+              <div className="rounded-md border border-rose-200 bg-rose-50 p-2.5 text-xs font-medium text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+                {reassignError}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
@@ -594,10 +665,10 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmReassign}
-                disabled={!reassignReason.trim()}
+                disabled={!reassignReason.trim() || !newAuditorId || isReassigning}
                 className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold rounded-md text-sm disabled:opacity-40 transition-colors"
               >
-                Xác nhận chuyển giao
+                {isReassigning ? 'Đang lưu...' : 'Xác nhận chuyển giao'}
               </button>
             </div>
           </div>

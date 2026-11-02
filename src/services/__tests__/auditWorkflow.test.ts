@@ -69,6 +69,7 @@ test('Action Transition: assigned auditor can start recheck without a sale self-
 
   const assignedAuditor = { role: 'AUDITOR' as const, auditorId: 'AUD-01' };
   const otherAuditor = { role: 'AUDITOR' as const, auditorId: 'AUD-02' };
+  const headAuditor = { role: 'HEAD_AUDITOR' as const };
 
   // 1. Valid: SALE_MARKED_DONE
   assert.equal(
@@ -98,6 +99,9 @@ test('Action Transition: assigned auditor can start recheck without a sale self-
   const resOther = canAuditorStartRecheck({ ...baseAction, status: 'SALE_MARKED_DONE' }, otherAuditor);
   assert.equal(resOther.valid, false);
   assert.match(resOther.error || '', /Từ chối quyền/);
+
+  // 5. Head Auditor can handle an unassigned/manual queue case as fallback.
+  assert.equal(canAuditorStartRecheck({ ...baseAction, status: 'OPEN' }, headAuditor).valid, true);
 });
 
 test('Action Transition: auditorSubmitRecheck only allows IN_RECHECK, IMPROVED -> VERIFIED_CLOSED, NOT_IMPROVED -> REOPENED with nextDueDate', () => {
@@ -107,6 +111,7 @@ test('Action Transition: auditorSubmitRecheck only allows IN_RECHECK, IMPROVED -
   };
 
   const assignedAuditor = { role: 'AUDITOR' as const, auditorId: 'AUD-01' };
+  const headAuditor = { role: 'HEAD_AUDITOR' as const };
 
   // 1. Valid IMPROVED from IN_RECHECK
   const resImproved = canAuditorSubmitRecheck(
@@ -124,6 +129,12 @@ test('Action Transition: auditorSubmitRecheck only allows IN_RECHECK, IMPROVED -
     '2026-10-25'
   );
   assert.equal(resNotImproved.valid, true);
+
+  // The Head Auditor may conclude a recheck when covering an unassigned case.
+  assert.equal(
+    canAuditorSubmitRecheck({ ...baseAction, status: 'IN_RECHECK' }, headAuditor, 'IMPROVED').valid,
+    true
+  );
 
   // 3. Invalid NOT_IMPROVED without nextDueDate
   const resNoDueDate = canAuditorSubmitRecheck(

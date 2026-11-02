@@ -625,7 +625,7 @@ app.post('/api/queue/:id/complete-audit', async (req: Request, res: Response) =>
       if (['COMPLETED_PASS', 'COMPLETED_FAIL', 'SKIPPED', 'BLOCKED'].includes(queueItem.status)) {
         throw new Error('Ca audit này đã được chốt trước đó.');
       }
-      if (issueCodes.length > 0 && !queueItem.assignedAuditorId) {
+      if (issueCodes.length > 0 && !queueItem.assignedAuditorId && !isHead) {
         throw new Error('Hãy phân công Auditor trước khi giao Action khắc phục cho Sale.');
       }
 
@@ -1063,11 +1063,33 @@ app.get('/api/actions', async (req: Request, res: Response) => {
         ca.sale_marked_done AS "saleMarkedDone",
         ca.sale_marked_done_at AS "saleMarkedDoneAt",
         ca.sale_notes AS "saleNotes",
+        COALESCE(recheck_data.rechecks, '[]'::jsonb) AS rechecks,
         ca.waive_reason AS "waiveReason",
         ca.waive_approved_by AS "waiveApprovedBy",
         (ca.due_date < NOW() AND ca.status IN ('OPEN', 'REOPENED')) AS "isOverdue"
       FROM corrective_actions ca
       LEFT JOIN auditor_profiles ap ON ap.id = ca.auditor_id
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', r.id,
+            'actionId', r.action_id,
+            'recheckNumber', r.recheck_number,
+            'auditorId', COALESCE(recheck_auditor.auditor_code, r.auditor_id),
+            'auditorName', r.auditor_name,
+            'recheckDate', r.recheck_date,
+            'result', r.result,
+            'notes', r.notes,
+            'evidenceIds', '[]'::jsonb,
+            'nextDueDate', r.next_due_date,
+            'nextRecheckSchedule', r.next_recheck_schedule
+          )
+          ORDER BY r.recheck_number ASC
+        ) AS rechecks
+        FROM rechecks r
+        LEFT JOIN auditor_profiles recheck_auditor ON recheck_auditor.id = r.auditor_id
+        WHERE r.action_id = ca.id
+      ) recheck_data ON true
       ${whereClause}
       ORDER BY ca.created_at DESC;
     `;
@@ -1200,11 +1222,12 @@ app.post('/api/actions/:id/start-recheck', async (req: Request, res: Response) =
 
       await client.query(
         `INSERT INTO audit_trail_events (id, action_type, description, actor_name, actor_role)
-         VALUES ($1, 'RECHECK_STARTED', $2, $3, 'AUDITOR')`,
+         VALUES ($1, 'RECHECK_STARTED', $2, $3, $4)`,
         [
           `TRL-${Date.now()}`,
-          `Auditor ${action.auditorName} bắt đầu kiểm tra (IN_RECHECK) action ${action.code}.`,
-          action.auditorName,
+          `${actor.name} bắt đầu kiểm tra (IN_RECHECK) action ${action.code}.`,
+          actor.name,
+          actor.role,
         ]
       );
     });
@@ -1285,12 +1308,13 @@ app.post('/api/actions/:id/submit-recheck', async (req: Request, res: Response) 
 
         await client.query(
           `INSERT INTO audit_trail_events (id, action_type, description, details, actor_name, actor_role)
-           VALUES ($1, 'RECHECK_IMPROVED', $2, $3, $4, 'AUDITOR')`,
+           VALUES ($1, 'RECHECK_IMPROVED', $2, $3, $4, $5)`,
           [
             `TRL-${Date.now()}`,
-            `Auditor ${action.auditorName} xác nhận IMPROVED. Action ${action.code} được ĐÓNG.`,
+            `${actor.name} xác nhận IMPROVED. Action ${action.code} được ĐÓNG.`,
             notes,
-            action.auditorName,
+            actor.name,
+            actor.role,
           ]
         );
       } else {
@@ -1306,12 +1330,13 @@ app.post('/api/actions/:id/submit-recheck', async (req: Request, res: Response) 
 
         await client.query(
           `INSERT INTO audit_trail_events (id, action_type, description, details, actor_name, actor_role)
-           VALUES ($1, 'RECHECK_NOT_IMPROVED', $2, $3, $4, 'AUDITOR')`,
+           VALUES ($1, 'RECHECK_NOT_IMPROVED', $2, $3, $4, $5)`,
           [
             `TRL-${Date.now()}`,
-            `Auditor ${action.auditorName} xác nhận NOT_IMPROVED. Mở lại action ${action.code}.`,
+            `${actor.name} xác nhận NOT_IMPROVED. Mở lại action ${action.code}.`,
             `Hạn mới: ${nextDueDate} • Ghi chú: ${notes}`,
-            action.auditorName,
+            actor.name,
+            actor.role,
           ]
         );
       }

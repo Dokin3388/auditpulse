@@ -82,6 +82,9 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
     if (result.success) {
       setFeedbackMsg({ type: 'success', text: result.message });
       setTimeout(() => {
+        if (result.linkedActionId && onNavigateToAction) {
+          onNavigateToAction(result.linkedActionId);
+        }
         onClose();
       }, 1200);
     } else {

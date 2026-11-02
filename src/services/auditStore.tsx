@@ -40,8 +40,6 @@ import {
   completeAuditQueueItem,
   getAppUsers,
   getIssueDefinitions,
-  materializeAuditQueue,
-  todayInVietnam,
   getAuditorAssignments,
   getCorrectiveActions,
   createAssignments,
@@ -74,14 +72,14 @@ export interface AuditStoreContextType {
   filteredActions: CorrectiveAction[];
   // Actions
   saleMarkActionDone: (actionId: string, notes: string, evidence?: Evidence) => { success: boolean; message: string };
-  auditorStartRecheck: (actionId: string) => { success: boolean; message: string };
+  auditorStartRecheck: (actionId: string) => Promise<{ success: boolean; message: string }>;
   auditorSubmitRecheck: (
     actionId: string,
     result: RecheckResult,
     notes: string,
     nextDueDate?: string,
     evidence?: Evidence
-  ) => { success: boolean; message: string };
+  ) => Promise<{ success: boolean; message: string }>;
   headAuditorWaiveAction: (actionId: string, reason: string) => { success: boolean; message: string };
   /** Resolves only after the server committed and the state was reloaded from the server. */
   createAuditorAssignment: (
@@ -104,9 +102,8 @@ export interface AuditStoreContextType {
     selectedIssueCodes: string[],
     generalNotes: string,
     evidences: Evidence[]
-  ) => Promise<{ success: boolean; message: string; caseId?: string }>;
+  ) => Promise<{ success: boolean; message: string; caseId?: string; linkedActionId?: string | null }>;
   triggerManualSync: (sourceId: string) => { success: boolean; message: string };
-  reassignQueueItem: (queueItemId: string, newAuditorId: string, reason: string) => { success: boolean; message: string };
 }
 
 export const AuditStoreContext = createContext<AuditStoreContextType | null>(null);
@@ -216,23 +213,12 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
   useEffect(() => {
     let cancelled = false;
 
-    // Load the existing queue immediately. Refreshing from the source sheet
-    // is a background task and must never block the auditor's worklist.
+    // Load the already-prepared queue immediately. Daily materialization is
+    // performed by the scheduled server job or the explicit upload flow, not
+    // on every Head Auditor page load. That keeps the worklist responsive.
     void getAuditQueue().then((items) => {
       if (!cancelled) setQueueItems(items);
     }).catch(() => undefined);
-    // Building the daily queue is a Head/Admin operation. Auditors only read
-    // the worklist that was assigned to them, so their login never triggers a
-    // write attempt or an avoidable permission error.
-    if (initialUser?.role === 'HEAD_AUDITOR' || initialUser?.role === 'ADMIN') {
-      void materializeAuditQueue(todayInVietnam())
-        .then(() => getAuditQueue())
-        .then((items) => {
-          if (!cancelled) setQueueItems(items);
-        })
-        // Never silent: a failed daily refresh is why "today" can look empty.
-        .catch((error: unknown) => console.error('[AuditPulse] Không cập nhật được Audit Queue hôm nay:', error));
-    }
 
     void Promise.allSettled([
       getAppUsers(),
@@ -403,8 +389,9 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     };
   };
 
-  // AUDITOR FLOW: Start Recheck (Strict RBAC: Only assigned auditor)
-  const auditorStartRecheck = (actionId: string) => {
+  // AUDITOR FLOW: Start Recheck. The server is the source of truth; a
+  // successful-looking local change must never hide a failed write.
+  const auditorStartRecheck = async (actionId: string) => {
     const action = correctiveActions.find((a) => a.id === actionId);
     if (!action) return { success: false, message: 'Không tìm thấy action' };
 
@@ -414,13 +401,12 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       return { success: false, message: validation.error || 'Thao tác không hợp lệ' };
     }
 
-    setCorrectiveActions((prev) =>
-      prev.map((act) => (act.id === actionId ? { ...act, status: 'IN_RECHECK' } : act))
-    );
-
-    // Persist the Auditor's decision server-side; local state updates immediately
-    // so the worklist stays responsive while the request completes.
-    void startActionRecheck(actionId).catch(() => undefined);
+    try {
+      await startActionRecheck(actionId);
+      setCorrectiveActions(await getCorrectiveActions());
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Không thể bắt đầu recheck.' };
+    }
 
     addTrailEvent(
       'RECHECK_STARTED',
@@ -432,7 +418,7 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
   // AUDITOR FLOW: Submit Recheck Result (Strict RBAC: Only assigned auditor)
   // Spec v1.1 invariant: DO NOT hardcode increment rescued order here!
-  const auditorSubmitRecheck = (
+  const auditorSubmitRecheck = async (
     actionId: string,
     result: RecheckResult,
     notes: string,
@@ -452,78 +438,28 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       return { success: false, message: 'Ghi chú recheck không được để trống.' };
     }
 
-    const newRecheckNumber = action.rechecks.length + 1;
-    const recheckRecord = {
-      id: `RC-${Date.now()}`,
-      actionId,
-      recheckNumber: newRecheckNumber,
-      auditorId: currentUser.auditorId || 'AUD-01',
-      auditorName: currentUser.name,
-      recheckDate: new Date().toISOString(),
-      result,
-      notes,
-      evidenceIds: evidence ? [evidence.id] : [],
-      nextDueDate: result === 'NOT_IMPROVED' ? nextDueDate : undefined,
-      nextRecheckSchedule: result === 'NOT_IMPROVED' ? new Date(Date.now() + 86400000).toISOString() : undefined,
-    };
+    try {
+      await submitActionRecheck({ actionId, result, notes, nextDueDate });
+      setCorrectiveActions(await getCorrectiveActions());
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Không thể lưu kết luận recheck.' };
+    }
 
     if (result === 'IMPROVED') {
-      // Transitions to VERIFIED_CLOSED per spec
-      setCorrectiveActions((prev) =>
-        prev.map((act) => {
-          if (act.id !== actionId) return act;
-          return {
-            ...act,
-            status: 'VERIFIED_CLOSED',
-            isOverdue: false,
-            rechecks: [...act.rechecks, recheckRecord],
-            auditorEvidenceList: evidence ? [...act.auditorEvidenceList, evidence] : act.auditorEvidenceList,
-          };
-        })
-      );
-
-      void submitActionRecheck({ actionId, result, notes }).catch(() => undefined);
-
       addTrailEvent(
         'RECHECK_IMPROVED',
         `Auditor ${currentUser.name} xác nhận IMPROVED. Action ${action.code} chính thức được ĐÓNG (VERIFIED_CLOSED).`,
         `Ghi chú: ${notes}`
       );
-
-      return {
-        success: true,
-        message: `Xác nhận cải thiện thành công! Action ${action.code} đã được đóng.`,
-      };
-    } else {
-      // Transitions to REOPENED per spec, requires nextDueDate
-      setCorrectiveActions((prev) =>
-        prev.map((act) => {
-          if (act.id !== actionId) return act;
-          return {
-            ...act,
-            status: 'REOPENED',
-            dueDate: nextDueDate!,
-            isOverdue: false,
-            saleMarkedDone: false, // Reset sale completion for reopened action
-            rechecks: [...act.rechecks, recheckRecord],
-            auditorEvidenceList: evidence ? [...act.auditorEvidenceList, evidence] : act.auditorEvidenceList,
-          };
-        })
-      );
-
-      void submitActionRecheck({ actionId, result, notes, nextDueDate }).catch(() => undefined);
-
-      addTrailEvent(
-        'RECHECK_NOT_IMPROVED',
-        `Auditor ${currentUser.name} xác nhận NOT_IMPROVED. Mở lại (REOPENED) action ${action.code}.`,
-        `Hạn xử lý mới: ${new Date(nextDueDate!).toLocaleDateString('vi-VN')}. Ghi chú: ${notes}`
-      );
-
-      return {
-        success: true,
-        message: `Action ${action.code} đã được mở lại (REOPENED). Sale được giao hạn xử lý mới.`,
-      };
+      return { success: true, message: `Xác nhận cải thiện thành công! Action ${action.code} đã được đóng.` };
     }
+
+    addTrailEvent(
+      'RECHECK_NOT_IMPROVED',
+      `Auditor ${currentUser.name} xác nhận NOT_IMPROVED. Mở lại (REOPENED) action ${action.code}.`,
+      `Hạn xử lý mới: ${new Date(nextDueDate!).toLocaleDateString('vi-VN')}. Ghi chú: ${notes}${evidence ? ` | Evidence: ${evidence.fileName}` : ''}`
+    );
+    return { success: true, message: `Action ${action.code} đã được mở lại (REOPENED). Sale được giao hạn xử lý mới.` };
   };
 
   // HEAD AUDITOR FLOW: Waive / Cancel Action (Strict RBAC: Head Auditor/Admin only)
@@ -684,40 +620,10 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
       const [latestQueue, latestActions] = await Promise.all([getAuditQueue(), getCorrectiveActions()]);
       setQueueItems(latestQueue);
       setCorrectiveActions(latestActions);
-      return { success: true, message: result.message, caseId: result.caseId };
+      return { success: true, message: result.message, caseId: result.caseId, linkedActionId: result.linkedActionId };
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : 'Không thể chốt ca audit.' };
     }
-  };
-
-  // HEAD AUDITOR: Reassign individual Queue Item (Strict RBAC: Head Auditor/Admin only)
-  const reassignQueueItem = (queueItemId: string, newAuditorId: string, reason: string) => {
-    if (currentUser.role !== 'HEAD_AUDITOR' && currentUser.role !== 'ADMIN') {
-      return { success: false, message: 'Từ chối quyền: Chỉ Head Auditor hoặc Admin mới có quyền chuyển giao Queue Item.' };
-    }
-
-    const newAuditor = allUsers.find((u) => u.auditorId === newAuditorId);
-    if (!newAuditor) return { success: false, message: 'Không tìm thấy Auditor' };
-
-    setQueueItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== queueItemId) return item;
-        return {
-          ...item,
-          assignedAuditorId: newAuditorId,
-          assignedAuditorName: newAuditor.name,
-          sharedWork: true, // Flag per spec section 9
-        };
-      })
-    );
-
-    addTrailEvent(
-      'QUEUE_ITEM_REASSIGNED',
-      `Head Auditor chuyển giao Queue Item ${queueItemId} cho ${newAuditor.name}.`,
-      `Lý do: ${reason} (Có cờ shared_work)`
-    );
-
-    return { success: true, message: `Đã chuyển giao Queue Item cho ${newAuditor.name} thành công.` };
   };
 
   // Trigger manual source sync (Strict RBAC: Head Auditor/Admin only)
@@ -773,7 +679,6 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
         approveIssueDefinition,
         createAuditCaseForQueue,
         triggerManualSync,
-        reassignQueueItem,
       }}
     >
       {children}

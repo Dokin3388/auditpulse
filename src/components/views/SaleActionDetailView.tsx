@@ -90,9 +90,9 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     }
   };
 
-  const handleStartRecheck = () => {
+  const handleStartRecheck = async () => {
     if (!activeAction) return;
-    const res = auditorStartRecheck(activeAction.id);
+    const res = await auditorStartRecheck(activeAction.id);
     if (res.success) {
       setStatusMessage({ type: 'success', message: res.message });
     } else {
@@ -100,7 +100,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
     }
   };
 
-  const handleAuditorSubmit = (e: React.FormEvent) => {
+  const handleAuditorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAction) return;
 
@@ -114,7 +114,7 @@ export const SaleActionDetailView: React.FC<SaleActionDetailViewProps> = ({
       return;
     }
 
-    const res = auditorSubmitRecheck(
+    const res = await auditorSubmitRecheck(
       activeAction.id,
       recheckVerdict,
       recheckNotes,
