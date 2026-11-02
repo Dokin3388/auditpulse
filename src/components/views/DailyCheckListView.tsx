@@ -74,7 +74,9 @@ export const DailyCheckListView: React.FC = () => {
     setFeedback(null);
     try {
       const xlsx = await getXlsx();
-      const workbook = xlsx.read(await file.arrayBuffer(), { type: 'array', raw: false });
+      const workbook = file.name.toLowerCase().endsWith('.csv')
+        ? xlsx.read(await file.text(), { type: 'string', raw: false })
+        : xlsx.read(await file.arrayBuffer(), { type: 'array', raw: false });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!firstSheet) throw new Error('File chưa có sheet dữ liệu.');
       const rows = xlsx.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1, defval: '' });
