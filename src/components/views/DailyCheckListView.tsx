@@ -18,7 +18,14 @@ const HEADER_ALIASES: Record<string, string> = {
 };
 
 function normaliseHeader(value: unknown) {
-  return String(value ?? '').trim().toLocaleLowerCase('vi-VN').replace(/\s+/g, ' ');
+  return String(value ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
 async function getXlsx() {
