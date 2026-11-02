@@ -140,15 +140,20 @@ const ASSIGNMENT_SELECT = `
 /** Lists assignments. `isActive` is computed against today's Vietnam date, not stored state. */
 export async function listAssignments(
   db: Queryable,
-  options: { saleRef?: string; today?: string } = {}
+  options: { saleRef?: string; auditorId?: string; today?: string } = {}
 ): Promise<AuditorAssignment[]> {
   const today = options.today ?? vietnamToday();
   const values: unknown[] = [today];
-  let where = '';
+  const filters: string[] = [];
   if (options.saleRef) {
     values.push(options.saleRef);
-    where = 'WHERE (a.sale_id = $2 OR sp.sale_code = $2)';
+    filters.push(`(a.sale_id = $${values.length} OR sp.sale_code = $${values.length})`);
   }
+  if (options.auditorId) {
+    values.push(options.auditorId);
+    filters.push(`a.auditor_id = $${values.length}`);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const res = await db.query<AuditorAssignment>(
     `${ASSIGNMENT_SELECT} ${where} ORDER BY a.effective_from DESC, a.created_at DESC`,
     values
@@ -290,6 +295,21 @@ export async function createAssignmentsInTransaction(
         `Lý do: ${input.reason}`,
         JSON.stringify({ assignmentId: id, saleId: sale.id, auditorId: auditor.id, effectiveFrom: input.effectiveFrom }),
       ]
+    );
+
+    // Persist the new owner on any still-open queue rows. This makes a
+    // reassignment take effect immediately for already-uploaded worklists as
+    // well as future CSV uploads, without altering cases that were completed.
+    await client.query(
+      `UPDATE audit_queue_items
+          SET assigned_auditor_id = $1,
+              snapshot_auditor_name = $2,
+              assigned_at = NOW(),
+              status = 'ASSIGNED'
+        WHERE sale_id = $3
+          AND audit_date >= $4::date
+          AND status IN ('UNASSIGNED', 'ASSIGNED')`,
+      [auditor.id, auditor.name, sale.id, input.effectiveFrom]
     );
   }
 

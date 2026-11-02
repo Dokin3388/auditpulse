@@ -248,6 +248,15 @@ const requireAuditOperator = (req: Request, res: Response, next: NextFunction) =
   next();
 };
 
+const requireHeadAuditor = (_req: Request, res: Response, next: NextFunction) => {
+  const actor = res.locals.actor as AppActor | undefined;
+  if (!actor || (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN')) {
+    res.status(403).json({ error: 'Chỉ Head Auditor/Admin được phép thực hiện thao tác này.' });
+    return;
+  }
+  next();
+};
+
 app.get('/api/me', requireAppSession, async (req: Request, res: Response) => {
   const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
   res.json({
@@ -264,12 +273,31 @@ app.use(
   requireAuditOperator
 );
 app.use('/api/sync/google-sheets/issue-logs', requireAppSession, requireAuditOperator);
+app.use(['/api/admin', '/api/onboarding'], requireHeadAuditor);
+app.use('/api/sync/google-sheets/status', requireAppSession, requireAuditOperator, requireHeadAuditor);
 
 app.get('/api/users', async (req: Request, res: Response) => {
   try {
+    const actor = res.locals.actor as AppActor;
     const role = typeof req.query.role === 'string' ? req.query.role : null;
     const values: unknown[] = [];
     const roleClause = role ? `AND u.role = $${values.push(role)}` : '';
+    const auditorVisibilityClause = actor.role === 'AUDITOR'
+      ? `AND (
+          u.id = $${values.push(actor.id)}
+          OR (
+            u.role = 'SALE'
+            AND EXISTS (
+              SELECT 1
+                FROM auditor_assignments a
+               WHERE a.sale_id = u.id
+                 AND a.auditor_id = $${values.length}
+                 AND a.effective_from <= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+                 AND (a.effective_to IS NULL OR a.effective_to >= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
+            )
+          )
+        )`
+      : '';
     const result = await query(`
       SELECT u.id, u.email, u.name, u.role, u.avatar_url AS "avatarUrl", u.is_active AS "isActive",
              ap.auditor_code AS "auditorId", sp.sale_code AS "saleId",
@@ -278,7 +306,7 @@ app.get('/api/users', async (req: Request, res: Response) => {
       LEFT JOIN auditor_profiles ap ON ap.id = u.id
       LEFT JOIN sales_profiles sp ON sp.id = u.id
       LEFT JOIN teams t ON t.id = COALESCE(sp.team_id, NULL)
-      WHERE u.is_active = true ${roleClause}
+      WHERE u.is_active = true ${roleClause} ${auditorVisibilityClause}
       ORDER BY u.role, u.name`, values);
     res.json({ data: result.rows });
   } catch (err: unknown) {
@@ -359,9 +387,9 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
   }
 
   const accounts = [
-    { id: 'AUDITOR-AUD-MAI-HOANG', code: 'AUD-01', name: 'Mai Hoàng', email: 'auditor01@auditpulse.local' },
-    { id: 'AUDITOR-AUD-NGOC-NHI', code: 'AUD-02', name: 'Ngọc Nhi', email: 'auditor02@auditpulse.local' },
-    { id: 'AUDITOR-AUD-PHUONG-TINH', code: 'AUD-03', name: 'Phương Tình', email: 'auditor03@auditpulse.local' },
+    { id: 'AUDITOR-AUD-MAI-HOANG', code: 'AUD-01', name: 'Mai Tu Nguyen Hoang', email: 'maitunguyenhoang@gmail.com' },
+    { id: 'AUDITOR-AUD-NGOC-NHI', code: 'AUD-02', name: 'Phan Ngoc Nhi', email: 'phanngocnh2004@gmail.com' },
+    { id: 'AUDITOR-AUD-NGUYEN-TINH', code: 'AUD-03', name: 'Nguyen Tinh', email: 'nguyen.tinh199c@gmail.com' },
   ];
 
   try {
@@ -439,6 +467,7 @@ app.get('/api/health', async (_req: Request, res: Response) => {
 // ============================================================================
 app.get('/api/queue', async (req: Request, res: Response) => {
   try {
+    const actor = res.locals.actor as AppActor;
     const { auditDate, status, auditorId, saleId } = req.query;
 
     const conditions: string[] = [];
@@ -459,6 +488,12 @@ app.get('/api/queue', async (req: Request, res: Response) => {
     if (saleId) {
       values.push(saleId);
       conditions.push(`q.sale_id = $${values.length}`);
+    }
+    // UI filters are helpful, but this server-side predicate is the actual
+    // access control: an Auditor can never retrieve another Auditor's worklist.
+    if (actor.role === 'AUDITOR') {
+      values.push(actor.id);
+      conditions.push(`COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) = $${values.length}`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -565,12 +600,21 @@ app.post('/api/queue/:id/complete-audit', async (req: Request, res: Response) =>
         assignedAuditorId: string | null; status: string; customerName: string; saleName: string; teamName: string; auditorName: string | null; ruleVersion: string;
       }>(
         `SELECT q.id, q.audit_date::text AS "auditDate", q.customer_id AS "customerId", q.sale_id AS "saleId", q.team_id AS "teamId",
-                q.assigned_auditor_id AS "assignedAuditorId", q.status,
+                COALESCE(q.assigned_auditor_id, effective_assignment.auditor_id) AS "assignedAuditorId", q.status,
                 q.snapshot_customer_name AS "customerName", q.snapshot_sale_name AS "saleName", q.snapshot_team_name AS "teamName",
-                q.snapshot_auditor_name AS "auditorName", q.rule_version AS "ruleVersion"
+                COALESCE(q.snapshot_auditor_name, effective_assignment.auditor_name) AS "auditorName", q.rule_version AS "ruleVersion"
            FROM audit_queue_items q
+           LEFT JOIN LATERAL (
+             SELECT a.auditor_id, a.snapshot_auditor_name AS auditor_name
+               FROM auditor_assignments a
+              WHERE a.sale_id = q.sale_id
+                AND a.effective_from <= q.audit_date
+                AND (a.effective_to IS NULL OR a.effective_to >= q.audit_date)
+              ORDER BY a.effective_from DESC
+              LIMIT 1
+           ) effective_assignment ON true
           WHERE q.id = $1
-          FOR UPDATE`,
+          FOR UPDATE OF q`,
         [queueItemId]
       );
       const queueItem = queueResult.rows[0];
@@ -651,9 +695,13 @@ app.post('/api/queue/:id/complete-audit', async (req: Request, res: Response) =>
 
       await client.query(
         `UPDATE audit_queue_items
-            SET status = $1, active_action_id = $2
-          WHERE id = $3`,
-        [isPass ? 'COMPLETED_PASS' : 'COMPLETED_FAIL', activeActionId, queueItem.id]
+            SET status = $1,
+                active_action_id = $2,
+                assigned_auditor_id = COALESCE(assigned_auditor_id, $3),
+                snapshot_auditor_name = COALESCE(snapshot_auditor_name, $4),
+                assigned_at = COALESCE(assigned_at, NOW())
+          WHERE id = $5`,
+        [isPass ? 'COMPLETED_PASS' : 'COMPLETED_FAIL', activeActionId, assignedAuditorId, assignedAuditorName, queueItem.id]
       );
       await client.query(
         `INSERT INTO audit_trail_events (id, actor_name, actor_role, actor_user_id, action_type, description, metadata)
@@ -911,6 +959,11 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
 // Promote customers matching the daily rules (and optional issue-log rows) into one review
 // queue item per customer/day. Idempotent; see server/services/queueMaterializer.ts.
 app.post('/api/queue/materialize-from-issue-logs', async (req: Request, res: Response) => {
+  const actor = res.locals.actor as AppActor;
+  if (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Chỉ Head Auditor/Admin được cập nhật hàng chờ Audit.' });
+    return;
+  }
   try {
     const requested = typeof req.body?.auditDate === 'string' ? req.body.auditDate : '';
     const auditDate = AUDIT_DATE_PATTERN.test(requested) ? requested : null;
@@ -958,6 +1011,7 @@ app.get('/api/cron/materialize-queue', async (req: Request, res: Response) => {
 // ============================================================================
 app.get('/api/actions', async (req: Request, res: Response) => {
   try {
+    const actor = res.locals.actor as AppActor;
     const { status, saleId, auditorId } = req.query;
 
     const conditions: string[] = [];
@@ -975,6 +1029,11 @@ app.get('/api/actions', async (req: Request, res: Response) => {
       values.push(auditorId);
       conditions.push(`ca.auditor_id = $${values.length}`);
     }
+    // Recheck/Action data is visible only to its assigned Auditor (or Head/Admin).
+    if (actor.role === 'AUDITOR') {
+      values.push(actor.id);
+      conditions.push(`ca.auditor_id = $${values.length}`);
+    }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -990,7 +1049,7 @@ app.get('/api/actions', async (req: Request, res: Response) => {
         ca.sale_id AS "saleId",
         ca.snapshot_sale_name AS "saleName",
         ca.snapshot_team_name AS "teamName",
-        ca.auditor_id AS "auditorId",
+        COALESCE(ap.auditor_code, ca.auditor_id) AS "auditorId",
         ca.snapshot_auditor_name AS "auditorName",
         ca.issue_code AS "issueCode",
         ca.issue_name AS "issueName",
@@ -1008,6 +1067,7 @@ app.get('/api/actions', async (req: Request, res: Response) => {
         ca.waive_approved_by AS "waiveApprovedBy",
         (ca.due_date < NOW() AND ca.status IN ('OPEN', 'REOPENED')) AS "isOverdue"
       FROM corrective_actions ca
+      LEFT JOIN auditor_profiles ap ON ap.id = ca.auditor_id
       ${whereClause}
       ORDER BY ca.created_at DESC;
     `;
@@ -1275,8 +1335,12 @@ app.post('/api/actions/:id/submit-recheck', async (req: Request, res: Response) 
 // ============================================================================
 app.get('/api/assignments', async (req: Request, res: Response) => {
   try {
+    const actor = res.locals.actor as AppActor;
     const saleRef = typeof req.query.saleId === 'string' && req.query.saleId ? req.query.saleId : undefined;
-    const data = await listAssignments({ query }, { saleRef });
+    const data = await listAssignments(
+      { query },
+      actor.role === 'AUDITOR' ? { auditorId: actor.id } : { saleRef }
+    );
     res.setHeader('Cache-Control', 'no-store');
     res.json({ data });
   } catch (err: unknown) {
@@ -1317,25 +1381,32 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
 // ============================================================================
 // 5. REPORTING: RESCUED ORDERS
 // ============================================================================
-app.get('/api/reports/rescued-orders', async (_req: Request, res: Response) => {
+app.get('/api/reports/rescued-orders', async (req: Request, res: Response) => {
   try {
+    const actor = res.locals.actor as AppActor;
+    const values: unknown[] = [];
+    const auditorScope = actor.role === 'AUDITOR'
+      ? `WHERE v.auditor_id = $${values.push(actor.id)}`
+      : '';
     const result = await query(`
       SELECT 
-        order_id AS "orderId",
-        order_code AS "orderCode",
-        customer_id AS "customerId",
-        customer_name AS "customerName",
-        action_id AS "actionId",
-        action_code AS "actionCode",
-        sale_id AS "saleId",
-        auditor_id AS "auditorId",
-        order_date AS "orderDate",
-        order_value AS "orderValue",
-        window_days AS "windowDays",
-        attribution_status AS "attributionStatus"
-      FROM v_rescued_orders_attribution
-      ORDER BY order_date DESC;
-    `);
+        v.order_id AS "orderId",
+        v.order_code AS "orderCode",
+        v.customer_id AS "customerId",
+        v.customer_name AS "customerName",
+        v.action_id AS "actionId",
+        v.action_code AS "actionCode",
+        v.sale_id AS "saleId",
+        COALESCE(ap.auditor_code, v.auditor_id) AS "auditorId",
+        v.order_date AS "orderDate",
+        v.order_value AS "orderValue",
+        v.window_days AS "windowDays",
+        v.attribution_status AS "attributionStatus"
+      FROM v_rescued_orders_attribution v
+      LEFT JOIN auditor_profiles ap ON ap.id = v.auditor_id
+      ${auditorScope}
+      ORDER BY v.order_date DESC;
+    `, values);
 
     res.json({ data: result.rows });
   } catch (err: unknown) {

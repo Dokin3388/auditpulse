@@ -221,13 +221,18 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     void getAuditQueue().then((items) => {
       if (!cancelled) setQueueItems(items);
     }).catch(() => undefined);
-    void materializeAuditQueue(todayInVietnam())
-      .then(() => getAuditQueue())
-      .then((items) => {
-        if (!cancelled) setQueueItems(items);
-      })
-      // Never silent: a failed daily refresh is why "today" can look empty.
-      .catch((error: unknown) => console.error('[AuditPulse] Không cập nhật được Audit Queue hôm nay:', error));
+    // Building the daily queue is a Head/Admin operation. Auditors only read
+    // the worklist that was assigned to them, so their login never triggers a
+    // write attempt or an avoidable permission error.
+    if (initialUser?.role === 'HEAD_AUDITOR' || initialUser?.role === 'ADMIN') {
+      void materializeAuditQueue(todayInVietnam())
+        .then(() => getAuditQueue())
+        .then((items) => {
+          if (!cancelled) setQueueItems(items);
+        })
+        // Never silent: a failed daily refresh is why "today" can look empty.
+        .catch((error: unknown) => console.error('[AuditPulse] Không cập nhật được Audit Queue hôm nay:', error));
+    }
 
     void Promise.allSettled([
       getAppUsers(),
