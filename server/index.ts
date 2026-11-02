@@ -549,7 +549,7 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
              FROM app_users u JOIN sales_profiles sp ON sp.id = u.id JOIN teams t ON t.id = sp.team_id
             WHERE (sp.sale_code = $1 OR lower(u.name) = lower($1))
               AND u.role = 'SALE'`,
-          [String(data.sale_code).trim(), String(data.team_code).trim()]
+          [String(data.sale_code).trim()]
         );
         if (!owner.rows[0]) {
           const importedTeam = String(data.team_code || '').trim();
