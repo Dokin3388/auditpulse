@@ -12,6 +12,8 @@ import { AuditorPerformanceView } from './components/views/AuditorPerformanceVie
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
 import { AuditorAssignmentView } from './components/views/AuditorAssignmentView';
+import { KpiManagementView } from './components/views/KpiManagementView';
+import { DailyCheckListView } from './components/views/DailyCheckListView';
 import { AuthGate } from './components/AuthGate';
 import type { UserProfile } from './types';
 
@@ -86,6 +88,10 @@ const MainApp: React.FC = () => {
           {activeTab === 'performance' && <AuditorPerformanceView />}
 
           {activeTab === 'reports' && <ReportsView />}
+
+          {activeTab === 'kpi-management' && <KpiManagementView />}
+
+          {activeTab === 'daily-checklist' && <DailyCheckListView />}
 
           {activeTab === 'settings' && <SettingsView />}
         </main>

@@ -9,6 +9,8 @@ import {
   TrendingUp,
   FileBarChart,
   Settings,
+  Target,
+  ClipboardList,
 } from 'lucide-react';
 
 export type NavTab =
@@ -20,6 +22,8 @@ export type NavTab =
   | 'assignments'
   | 'performance'
   | 'reports'
+  | 'kpi-management'
+  | 'daily-checklist'
   | 'settings';
 
 interface SidebarProps {
@@ -51,6 +55,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       icon: Layers,
       badge: pendingQueueCount > 0 ? pendingQueueCount : null,
       badgeColor: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
+    },
+    {
+      id: 'daily-checklist' as NavTab,
+      label: 'Lập danh sách check',
+      icon: ClipboardList,
+      badge: null,
+      adminOnly: true,
     },
     {
       id: 'action-detail' as NavTab,
@@ -85,6 +96,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       badge: null,
     },
     {
+      id: 'kpi-management' as NavTab,
+      label: 'Thiết lập KPI',
+      icon: Target,
+      badge: null,
+      adminOnly: true,
+    },
+    {
       id: 'settings' as NavTab,
       label: 'Cấu hình',
       icon: Settings,
@@ -99,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           Phân hệ tác vụ
         </div>
 
-        {navItems.map((item) => {
+        {navItems.filter((item) => !item.adminOnly || currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN').map((item) => {
           const Icon = item.icon;
           // Treat 'portfolio' as 'assignments' if active
           const isActive = activeTab === item.id || (item.id === 'assignments' && activeTab === 'portfolio');

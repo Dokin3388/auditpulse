@@ -16,7 +16,7 @@ export interface UserProfile {
   isActive: boolean;
 }
 
-export type RiskTagCode = 'YESTERDAY_CUSTOMERS' | 'NO_QUOTATION' | 'QUOTED_NOT_ORDERED';
+export type RiskTagCode = 'YESTERDAY_CUSTOMERS' | 'NO_QUOTATION' | 'QUOTED_NOT_ORDERED' | 'MANUAL_CHECK';
 
 export interface RiskTag {
   code: RiskTagCode;
@@ -307,6 +307,8 @@ export interface AuditorPerformanceMetric {
   salePerformanceDeltaPct: number; // e.g. +14.2%
   evaluationCohortSize: number;
 }
+
+export type KpiPeriodStatus = 'DRAFT' | 'ACTIVE' | 'LOCKED';
 
 export interface SourceSyncLog {
   id: string;

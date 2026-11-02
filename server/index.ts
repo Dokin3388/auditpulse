@@ -477,6 +477,101 @@ app.get('/api/queue', async (req: Request, res: Response) => {
   }
 });
 
+// Head Auditor uploads tomorrow's manually curated worklist. Each valid row is
+// assigned from the effective sale-to-auditor mapping on the audit date.
+app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
+  const actor = res.locals.actor as AppActor;
+  if (actor.role !== 'HEAD_AUDITOR' && actor.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Chỉ Head Auditor/Admin được lập danh sách kiểm tra.' });
+    return;
+  }
+  const body = (req.body ?? {}) as { auditDate?: string; fileName?: string; csvText?: string };
+  const auditDate = typeof body.auditDate === 'string' ? body.auditDate : '';
+  const csvText = typeof body.csvText === 'string' ? body.csvText : '';
+  const today = vietnamBusinessDate();
+  if (!AUDIT_DATE_PATTERN.test(auditDate) || auditDate < today) {
+    res.status(400).json({ error: 'Ngày kiểm tra phải là hôm nay hoặc tương lai theo giờ Việt Nam.' });
+    return;
+  }
+  if (!csvText.trim()) {
+    res.status(400).json({ error: 'Danh sách khách kiểm tra đang trống.' });
+    return;
+  }
+  try {
+    const parsed = parseCsv(csvText);
+    const required = ['customer_name', 'phone', 'sale_code', 'team_code', 'check_reason'];
+    const missing = required.filter((header) => !parsed.headers.includes(header));
+    if (missing.length) throw new Error(`Thiếu cột bắt buộc: ${missing.join(', ')}.`);
+    const result = await withTransaction(async (client) => {
+      const rows: Array<{ data: Record<string, string>; phone: string; saleId: string; saleName: string; teamId: string; teamName: string; priority: string }> = [];
+      const errors: string[] = [];
+      const phones = new Set<string>();
+      for (let index = 0; index < parsed.rows.length; index += 1) {
+        const data = parsed.rows[index];
+        const line = parsed.rawLineNumbers[index] || index + 2;
+        const phone = String(data.phone || '').replace(/\D/g, '');
+        const priority = String(data.priority || 'MEDIUM').trim().toUpperCase();
+        if (!String(data.customer_name || '').trim() || phone.length < 9 || !String(data.sale_code || '').trim() || !String(data.team_code || '').trim() || !String(data.check_reason || '').trim()) {
+          errors.push(`Dòng ${line}: cần đủ tên khách, SĐT, mã sale, mã team và lý do check.`);
+          continue;
+        }
+        if (!['LOW', 'MEDIUM', 'HIGH'].includes(priority)) {
+          errors.push(`Dòng ${line}: ưu tiên chỉ nhận LOW, MEDIUM hoặc HIGH.`);
+          continue;
+        }
+        if (phones.has(phone)) {
+          errors.push(`Dòng ${line}: SĐT ${phone} bị trùng trong file.`);
+          continue;
+        }
+        phones.add(phone);
+        const owner = await client.query<{ saleId: string; saleName: string; teamId: string; teamName: string }>(
+          `SELECT u.id AS "saleId", u.name AS "saleName", t.id AS "teamId", t.name AS "teamName"
+             FROM app_users u JOIN sales_profiles sp ON sp.id = u.id JOIN teams t ON t.id = sp.team_id
+            WHERE sp.sale_code = $1 AND t.code = $2 AND u.role = 'SALE' AND u.is_active = true`,
+          [String(data.sale_code).trim(), String(data.team_code).trim()]
+        );
+        if (!owner.rows[0]) {
+          errors.push(`Dòng ${line}: mã sale/team không khớp hoặc Sale chưa hoạt động.`);
+          continue;
+        }
+        rows.push({ data, phone, priority, ...owner.rows[0] });
+      }
+      if (!rows.length) throw new Error(errors.join(' ') || 'File không có dòng hợp lệ.');
+      if (errors.length) throw new Error(errors.slice(0, 8).join(' '));
+
+      const runId = `RUN-MANUAL-${auditDate.replaceAll('-', '')}-${randomBytes(5).toString('hex')}`;
+      await client.query(`INSERT INTO audit_queue_runs (id, run_date, rule_version, total_items, status) VALUES ($1, $2, 'MANUAL-INTAKE-v1', $3, 'COMPLETED')`, [runId, auditDate, rows.length]);
+      let unassignedCount = 0;
+      for (const item of rows) {
+        const existing = await client.query<{ id: string }>(`SELECT id FROM customers WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = $1 LIMIT 1`, [item.phone]);
+        const customerId = existing.rows[0]?.id || `MANUAL-CUST-${randomBytes(12).toString('hex')}`;
+        if (!existing.rows[0]) {
+          await client.query(`INSERT INTO customers (id, code, name, phone, first_seen_date, channel, current_sale_id, current_team_id) VALUES ($1, $2, $3, $4, NOW(), 'AUDIT_MANUAL_INTAKE', $5, $6)`, [customerId, `MANUAL-${item.phone}`, String(item.data.customer_name).trim(), item.phone, item.saleId, item.teamId]);
+        }
+        const assignment = await client.query<{ auditorId: string; auditorName: string }>(
+          `SELECT a.auditor_id AS "auditorId", u.name AS "auditorName"
+             FROM auditor_assignments a JOIN app_users u ON u.id = a.auditor_id
+            WHERE a.sale_id = $1 AND a.is_active = true AND a.effective_from <= $2::date
+              AND (a.effective_to IS NULL OR a.effective_to >= $2::date)
+            ORDER BY a.effective_from DESC LIMIT 1`, [item.saleId, auditDate]
+        );
+        const auditor = assignment.rows[0];
+        if (!auditor) unassignedCount += 1;
+        await client.query(
+          `INSERT INTO audit_queue_items (id, queue_run_id, audit_date, customer_id, sale_id, team_id, assigned_auditor_id, status, risk_tags, rule_version, sync_timestamp, assigned_at, snapshot_customer_name, snapshot_sale_name, snapshot_team_name, snapshot_auditor_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, 'MANUAL-INTAKE-v1', NOW(), $10, $11, $12, $13, $14)`,
+          [`QUEUE-MANUAL-${randomBytes(12).toString('hex')}`, runId, auditDate, customerId, item.saleId, item.teamId, auditor?.auditorId || null, auditor ? 'ASSIGNED' : 'UNASSIGNED', JSON.stringify([{ code: 'MANUAL_CHECK', label: 'Danh sách cần kiểm tra', description: String(item.data.check_reason).trim(), detectedAt: auditDate, priority: item.priority }]), auditor ? new Date().toISOString() : null, String(item.data.customer_name).trim(), item.saleName, item.teamName, auditor?.auditorName || null]
+        );
+      }
+      await client.query(`INSERT INTO audit_trail_events (id, actor_name, actor_role, actor_user_id, action_type, description, metadata) VALUES ($1, $2, $3, $4, 'MANUAL_QUEUE_CREATED', $5, $6::jsonb)`, [`TRL-MANUAL-${randomBytes(9).toString('hex')}`, actor.name, actor.role, actor.id, `Đã lập ${rows.length} khách cần kiểm tra ngày ${auditDate}.`, JSON.stringify({ auditDate, runId })]);
+      return { createdCount: rows.length, unassignedCount };
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Không thể lập danh sách kiểm tra.' });
+  }
+});
+
 // Promote customers matching the daily rules (and optional issue-log rows) into one review
 // queue item per customer/day. Idempotent; see server/services/queueMaterializer.ts.
 app.post('/api/queue/materialize-from-issue-logs', async (req: Request, res: Response) => {

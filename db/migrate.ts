@@ -105,7 +105,15 @@ async function runRollback() {
 
     await client.query('BEGIN');
     try {
-      if (latestVersion === '0007_customer_identity.sql') {
+      if (latestVersion === '0007_kpi_governance.sql') {
+        await client.query(`
+          DROP TABLE IF EXISTS kpi_change_log CASCADE;
+          DROP TABLE IF EXISTS auditor_kpi_targets CASCADE;
+          DROP TABLE IF EXISTS kpi_period_metrics CASCADE;
+          DROP TABLE IF EXISTS kpi_metric_definitions CASCADE;
+          DROP TABLE IF EXISTS kpi_periods CASCADE;
+        `);
+      } else if (latestVersion === '0007_customer_identity.sql') {
         await client.query(`
           DROP TABLE IF EXISTS customer_merge_log CASCADE;
           DROP TABLE IF EXISTS unmatched_transactions CASCADE;

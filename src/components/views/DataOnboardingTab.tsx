@@ -380,8 +380,9 @@ export const DataOnboardingTab: React.FC = () => {
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/onboarding/commit', {
+      const res = await fetch('/api/onboarding/commit', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           entityType: selectedEntityId,
@@ -392,18 +393,12 @@ export const DataOnboardingTab: React.FC = () => {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setCommitFeedback({
-          type: 'success',
-          message: `Commit thành công vào Neon PostgreSQL! Đã nạp ${previewRows.length} bản ghi. Batch ID: ${data.batchId}`,
-        });
-      } else {
-        throw new Error('API server unavailable or returned error');
+      const data = await res.json().catch(() => null) as { batchId?: string; error?: string } | null;
+      if (!res.ok || !data?.batchId) {
+        throw new Error(data?.error || 'Máy chủ chưa xác nhận lưu dữ liệu. Không có thay đổi nào được coi là thành công.');
       }
-    } catch {
       const newBatch: ImportBatchRecord = {
-        id: `BATCH-${Date.now()}`,
+        id: data.batchId,
         entityType: selectedEntityId,
         fileName,
         totalRows: previewRows.length,
@@ -414,10 +409,9 @@ export const DataOnboardingTab: React.FC = () => {
         status: 'COMMITTED',
       };
       setImportHistory((prev) => [newBatch, ...prev]);
-      setCommitFeedback({
-        type: 'success',
-        message: `Đã xác nhận commit thành công ${previewRows.length} bản ghi ${currentEntity.name}! Đã ghi nhận Audit Trail.`,
-      });
+      setCommitFeedback({ type: 'success', message: `Đã lưu ${previewRows.length} bản ghi. Batch ID: ${data.batchId}` });
+    } catch (error) {
+      setCommitFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Không thể lưu dữ liệu.' });
     }
   };
 

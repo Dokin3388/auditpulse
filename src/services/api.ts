@@ -10,6 +10,25 @@ import type {
   RecheckResult,
 } from '../types';
 
+export interface KpiPeriod {
+  id: string;
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  status: 'DRAFT' | 'ACTIVE' | 'LOCKED';
+  createdAt: string;
+}
+
+export interface KpiMetricDefinition {
+  id: string;
+  code: string;
+  name: string;
+  category: 'TEAM_OUTCOME' | 'INTERVENTION' | 'EXECUTION';
+  description: string;
+  unit: 'PERCENT' | 'COUNT' | 'CURRENCY' | 'SCORE';
+  direction: 'HIGHER' | 'LOWER';
+}
+
 export interface GoogleSheetSyncRun {
   id: string;
   sourceId: 'sales-operations' | 'sale-issues' | 'audit-team';
@@ -40,6 +59,22 @@ export async function getIssueDefinitions(): Promise<IssueDefinition[]> {
 
 export const todayInVietnam = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+
+export const tomorrowInVietnam = () => {
+  const today = todayInVietnam();
+  const date = new Date(`${today}T12:00:00+07:00`);
+  date.setDate(date.getDate() + 1);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(date);
+};
+
+export async function createManualAuditQueue(input: { auditDate: string; fileName: string; csvText: string }): Promise<{ createdCount: number; unassignedCount: number }> {
+  const response = await fetch('/api/queue/manual-intake', {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => null) as { createdCount?: number; unassignedCount?: number; error?: string } | null;
+  if (!response.ok || !payload) throw new Error(payload?.error || 'Không thể lưu danh sách kiểm tra.');
+  return { createdCount: Number(payload.createdCount || 0), unassignedCount: Number(payload.unassignedCount || 0) };
+}
 
 export async function materializeAuditQueue(auditDate = todayInVietnam()): Promise<void> {
   const response = await fetch('/api/queue/materialize-from-issue-logs', {
@@ -177,6 +212,7 @@ const riskTagLabels: Record<RiskTagCode, string> = {
   YESTERDAY_CUSTOMERS: 'Khách tạo hôm qua',
   NO_QUOTATION: 'Chưa báo giá',
   QUOTED_NOT_ORDERED: 'Báo giá chưa chốt',
+  MANUAL_CHECK: 'Danh sách cần kiểm tra',
 };
 
 function normalizeRiskTags(input: unknown): RiskTag[] {
@@ -295,6 +331,31 @@ export async function getRescuedOrders(): Promise<RescuedOrder[]> {
     saleName: order.saleName || order.saleId || '—',
     windowDays: Number(order.windowDays || 0),
   }));
+}
+
+export function getKpiPeriods(): Promise<KpiPeriod[]> {
+  return getList<KpiPeriod>('/api/kpi/periods');
+}
+
+export function getKpiMetricDefinitions(): Promise<KpiMetricDefinition[]> {
+  return getList<KpiMetricDefinition>('/api/kpi/metric-definitions');
+}
+
+export async function createKpiPeriod(input: { name: string; startsOn: string; endsOn: string }): Promise<KpiPeriod> {
+  const response = await fetch('/api/kpi/periods', {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => null) as { data?: KpiPeriod; error?: string } | null;
+  if (!response.ok || !payload?.data) throw new Error(payload?.error || 'Không thể tạo kỳ KPI.');
+  return payload.data;
+}
+
+export async function saveKpiPeriodMetrics(periodId: string, metrics: Array<{ metricId: string; weight: number }>): Promise<void> {
+  const response = await fetch(`/api/kpi/periods/${encodeURIComponent(periodId)}/metrics`, {
+    method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ metrics }),
+  });
+  const payload = await response.json().catch(() => null) as { error?: string } | null;
+  if (!response.ok) throw new Error(payload?.error || 'Không thể lưu bộ KPI.');
 }
 
 export async function getGoogleSheetSyncRuns(): Promise<GoogleSheetSyncRun[]> {
