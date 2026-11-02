@@ -544,17 +544,33 @@ app.post('/api/queue/manual-intake', async (req: Request, res: Response) => {
           continue;
         }
         phones.add(phone);
-        const owner = await client.query<{ saleId: string; saleName: string; teamId: string; teamName: string }>(
+        let owner = await client.query<{ saleId: string; saleName: string; teamId: string; teamName: string }>(
           `SELECT u.id AS "saleId", u.name AS "saleName", t.id AS "teamId", t.name AS "teamName"
              FROM app_users u JOIN sales_profiles sp ON sp.id = u.id JOIN teams t ON t.id = sp.team_id
             WHERE (sp.sale_code = $1 OR lower(u.name) = lower($1))
-              AND (t.code = $2 OR lower(t.name) = lower($2))
-              AND u.role = 'SALE' AND u.is_active = true`,
+              AND u.role = 'SALE'`,
           [String(data.sale_code).trim(), String(data.team_code).trim()]
         );
         if (!owner.rows[0]) {
-          errors.push(`Dòng ${line}: mã sale/team không khớp hoặc Sale chưa hoạt động.`);
-          continue;
+          const importedTeam = String(data.team_code || '').trim();
+          let team = await client.query<{ id: string; name: string }>(
+            `SELECT id, name FROM teams WHERE lower(name) = lower($1) OR code = $1 LIMIT 1`, [importedTeam]
+          );
+          if (!team.rows[0]) {
+            const suffix = randomBytes(8).toString('hex');
+            const teamId = `TEAM-IMP-${suffix}`;
+            await client.query(`INSERT INTO teams (id, code, name) VALUES ($1, $2, $3)`, [teamId, `IMP-${suffix}`, importedTeam]);
+            team = { rows: [{ id: teamId, name: importedTeam }] } as typeof team;
+          }
+          const suffix = randomBytes(8).toString('hex');
+          const saleId = `SALE-IMP-${suffix}`;
+          const saleName = String(data.sale_code).trim();
+          await client.query(
+            `INSERT INTO app_users (id, email, name, role, is_active) VALUES ($1, $2, $3, 'SALE', false)`,
+            [saleId, `import-${suffix}@auditpulse.local`, saleName]
+          );
+          await client.query(`INSERT INTO sales_profiles (id, sale_code, team_id) VALUES ($1, $2, $3)`, [saleId, `IMP-${suffix}`, team.rows[0].id]);
+          owner = { rows: [{ saleId, saleName, teamId: team.rows[0].id, teamName: team.rows[0].name }] } as typeof owner;
         }
         rows.push({ data, phone, priority, ...owner.rows[0] });
       }
