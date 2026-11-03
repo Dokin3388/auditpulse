@@ -23,15 +23,14 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
   const [newUrl, setNewUrl] = useState('');
   const [newType, setNewType] = useState<'IMAGE' | 'DOCUMENT' | 'LINK'>('IMAGE');
 
-  const handleCreateMockEvidence = () => {
-    if (!newCaption.trim()) return;
-    const mockEvidence: Evidence = {
+  const handleAddEvidenceLink = () => {
+    if (!newCaption.trim() || !newUrl.trim()) return;
+    const evidence: Evidence = {
       id: `EVI-${Date.now()}`,
       type: newType,
-      fileName: newType === 'IMAGE' ? 'screenshot_proof.png' : 'bien_ban_xac_nhan.pdf',
-      fileSize: '380 KB',
-      fileUrl: newUrl.trim() || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80',
-      thumbnailUrl: newUrl.trim() || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=120&auto=format&fit=crop&q=80',
+      fileName: newUrl.trim().split('/').pop() || 'evidence-link',
+      fileUrl: newUrl.trim(),
+      thumbnailUrl: newType === 'IMAGE' ? newUrl.trim() : undefined,
       caption: newCaption,
       uploadedByRole: 'SALE',
       uploadedByName: 'Người dùng hiện tại',
@@ -39,7 +38,7 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
     };
 
     if (onAddEvidence) {
-      onAddEvidence(mockEvidence);
+      onAddEvidence(evidence);
     }
     setNewCaption('');
     setNewUrl('');
@@ -164,7 +163,7 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="Để trống sẽ dùng link mẫu demo"
+                  placeholder="Dán URL bằng chứng đã lưu trên hệ thống được cấp phép"
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
                   className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-slate-400"
@@ -182,10 +181,10 @@ export const EvidencePreview: React.FC<EvidencePreviewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={handleCreateMockEvidence}
-                disabled={!newCaption.trim()}
+                onClick={handleAddEvidenceLink}
+                disabled={!newCaption.trim() || !newUrl.trim()}
                 className={`px-3 py-1.5 text-white font-medium rounded-md transition-colors ${
-                  newCaption.trim()
+                  newCaption.trim() && newUrl.trim()
                     ? 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900'
                     : 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 }`}

@@ -33,9 +33,6 @@ import {
 } from './workflowRules';
 
 import {
-  mockUsers,
-} from './mockData';
-import {
   getAuditQueue,
   completeAuditQueueItem,
   getAppUsers,
@@ -162,9 +159,9 @@ function deriveRescuedOrders(
       const orderTime = new Date(matchingOrder.orderDate).getTime();
       const diffDays = Math.max(1, Math.round((orderTime - actionCreatedTime) / 86400000));
 
-      // Attribution classification: SALE_SELF_RESOLVED if signal existed prior, else AUDIT_ASSISTED
-      const attribution: RescuedAttribution =
-        customerId === 'CUST-RESCUED-03' ? 'SALE_SELF_RESOLVED' : 'AUDIT_ASSISTED';
+      // The server report is authoritative. This local fallback is conservative
+      // and must not classify a row using a demo customer id.
+      const attribution: RescuedAttribution = 'AUDIT_ASSISTED';
 
       result.push({
         id: `RESCUE-${matchingOrder.id}`,
@@ -191,7 +188,8 @@ function deriveRescuedOrders(
 
 export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserProfile }> = ({ children, initialUser }) => {
   // Current logged in user comes from the real authenticated session.
-  const [currentUser, setCurrentUser] = useState<UserProfile>(initialUser || mockUsers[0]);
+  // AuthGate supplies the real session user; never fall back to a demo identity.
+  const [currentUser, setCurrentUser] = useState<UserProfile>(initialUser as UserProfile);
   const [allUsers, setAllUsers] = useState<UserProfile[]>(initialUser ? [initialUser] : []);
 
   // Core reactive entities

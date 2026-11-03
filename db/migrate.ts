@@ -119,6 +119,11 @@ async function runRollback() {
           DROP TABLE IF EXISTS unmatched_transactions CASCADE;
           DROP TABLE IF EXISTS customer_identifiers CASCADE;
         `);
+      } else if (latestVersion === '0008_production_hardening.sql') {
+        await client.query('DROP VIEW IF EXISTS v_rescued_orders_attribution;');
+        await client.query('DROP TRIGGER IF EXISTS trg_corrective_actions_updated_at ON corrective_actions;');
+        await client.query('DROP FUNCTION IF EXISTS set_corrective_action_updated_at();');
+        await client.query('DROP INDEX IF EXISTS idx_one_active_audit_case_per_queue_item;');
       } else if (latestVersion === '0004_google_sheets_webhook_sync.sql') {
         await client.query(`
           DROP TABLE IF EXISTS google_sheet_sync_errors CASCADE;

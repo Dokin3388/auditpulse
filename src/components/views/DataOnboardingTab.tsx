@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuditStore } from '../../services/auditStore';
+import { getOnboardingBatches } from '../../services/api';
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -198,20 +199,13 @@ export const DataOnboardingTab: React.FC = () => {
     message: string;
   } | null>(null);
 
-  // Local demo history of import batches
-  const [importHistory, setImportHistory] = useState<ImportBatchRecord[]>([
-    {
-      id: 'BATCH-INIT-20261020',
-      entityType: 'AUDITORS',
-      fileName: '03_auditors_template.csv',
-      totalRows: 2,
-      successRows: 2,
-      failedRows: 0,
-      importedBy: 'Vũ Thùy Linh (Head Auditor)',
-      createdAt: '2026-10-20 16:27',
-      status: 'COMMITTED',
-    },
-  ]);
+  const [importHistory, setImportHistory] = useState<ImportBatchRecord[]>([]);
+
+  useEffect(() => {
+    void getOnboardingBatches()
+      .then((batches) => setImportHistory(batches))
+      .catch(() => setImportHistory([]));
+  }, []);
 
   const currentEntity = ENTITY_OPTIONS.find((e) => e.id === selectedEntityId)!;
 
@@ -397,18 +391,8 @@ export const DataOnboardingTab: React.FC = () => {
       if (!res.ok || !data?.batchId) {
         throw new Error(data?.error || 'Máy chủ chưa xác nhận lưu dữ liệu. Không có thay đổi nào được coi là thành công.');
       }
-      const newBatch: ImportBatchRecord = {
-        id: data.batchId,
-        entityType: selectedEntityId,
-        fileName,
-        totalRows: previewRows.length,
-        successRows: previewRows.length,
-        failedRows: 0,
-        importedBy: `${currentUser.name} (${currentUser.role})`,
-        createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        status: 'COMMITTED',
-      };
-      setImportHistory((prev) => [newBatch, ...prev]);
+      const batches = await getOnboardingBatches();
+      setImportHistory(batches);
       setCommitFeedback({ type: 'success', message: `Đã lưu ${previewRows.length} bản ghi. Batch ID: ${data.batchId}` });
     } catch (error) {
       setCommitFeedback({ type: 'error', message: error instanceof Error ? error.message : 'Không thể lưu dữ liệu.' });

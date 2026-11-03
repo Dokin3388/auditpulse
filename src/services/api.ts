@@ -53,6 +53,22 @@ export async function getAppUsers(): Promise<UserProfile[]> {
   return getList<UserProfile>('/api/users');
 }
 
+export interface OnboardingBatch {
+  id: string;
+  entityType: string;
+  fileName: string;
+  totalRows: number;
+  successRows: number;
+  failedRows: number;
+  importedBy: string;
+  createdAt: string;
+  status: 'COMMITTED' | 'VALIDATED' | 'FAILED';
+}
+
+export function getOnboardingBatches(): Promise<OnboardingBatch[]> {
+  return getList<OnboardingBatch>('/api/onboarding/batches');
+}
+
 export async function getIssueDefinitions(): Promise<IssueDefinition[]> {
   return getList<IssueDefinition>('/api/issue-definitions');
 }
