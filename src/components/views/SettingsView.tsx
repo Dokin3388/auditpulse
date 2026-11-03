@@ -139,7 +139,7 @@ export const SettingsView: React.FC = () => {
               <div className="mt-1.5 space-y-1 font-mono text-[11px]">
                 {bootstrapAccounts.map((account) => (
                   <div key={account.id} className="p-1.5 bg-white dark:bg-slate-900 rounded border border-amber-200 dark:border-amber-900/40">
-                    {account.name} — {account.email} — <strong className="text-slate-900 dark:text-slate-100">{account.password}</strong>{account.status === 'existing' && <span className="ml-2 text-slate-500">(đã có)</span>}
+                    {account.name} — {account.email} — <strong className="text-slate-900 dark:text-slate-100">Mật khẩu mới: {account.password}</strong>{account.status === 'existing' && <span className="ml-2 text-slate-500">(đã cấp lại)</span>}
                   </div>
                 ))}
               </div>

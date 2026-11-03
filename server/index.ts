@@ -458,7 +458,7 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
         id: targetId,
         name: appUser.name,
         email: account.email,
-        password: status === 'created' ? temporaryPassword : 'Đã tồn tại — giữ mật khẩu hiện tại',
+        password: temporaryPassword,
         status,
       });
     }
