@@ -32,7 +32,7 @@ SELECT
   o.order_date,
   o.total_amount AS order_value,
   ROUND(EXTRACT(EPOCH FROM (o.order_date - ca.created_at)) / 86400) AS window_days,
-  'AUDIT_ASSISTED'::varchar AS attribution_status
+  'AUDIT_ASSISTED'::text AS attribution_status
 FROM sales_orders o
 JOIN corrective_actions ca ON ca.customer_id = o.customer_id
 JOIN customers c ON c.id = o.customer_id
