@@ -51,11 +51,12 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
   const customerOrders = salesOrders.filter((o) => o.customerId === queueItem.customerId);
 
   // Check role permission
+  const normalizeIdentity = (value: unknown) => String(value || '').trim().toLocaleLowerCase('vi-VN');
   const isAssignedAuditor =
-    currentUser.role === 'AUDITOR' && (
-      currentUser.auditorId === queueItem.assignedAuditorId ||
-      currentUser.id === queueItem.assignedAuditorId ||
-      currentUser.name === queueItem.assignedAuditorName
+    normalizeIdentity(currentUser.role) === 'auditor' && (
+      normalizeIdentity(currentUser.auditorId) === normalizeIdentity(queueItem.assignedAuditorId) ||
+      normalizeIdentity(currentUser.id) === normalizeIdentity(queueItem.assignedAuditorId) ||
+      normalizeIdentity(currentUser.name) === normalizeIdentity(queueItem.assignedAuditorName)
     );
   const isHeadOrAdmin = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
   const canAudit = isAssignedAuditor || isHeadOrAdmin;
