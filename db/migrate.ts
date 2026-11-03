@@ -119,6 +119,14 @@ async function runRollback() {
           DROP TABLE IF EXISTS unmatched_transactions CASCADE;
           DROP TABLE IF EXISTS customer_identifiers CASCADE;
         `);
+      } else if (latestVersion === '0009_queue_performance_indexes.sql') {
+        await client.query(`
+          DROP INDEX IF EXISTS idx_quotations_customer_quote_date;
+          DROP INDEX IF EXISTS idx_sales_orders_customer_status_order_date;
+          DROP INDEX IF EXISTS idx_assignments_sale_effective_dates;
+          DROP INDEX IF EXISTS idx_queue_date_status_auditor;
+          DROP INDEX IF EXISTS idx_customers_first_seen_date;
+        `);
       } else if (latestVersion === '0008_production_hardening.sql') {
         await client.query('DROP VIEW IF EXISTS v_rescued_orders_attribution;');
         await client.query('DROP TRIGGER IF EXISTS trg_corrective_actions_updated_at ON corrective_actions;');

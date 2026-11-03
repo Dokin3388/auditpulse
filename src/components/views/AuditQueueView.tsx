@@ -32,6 +32,8 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
     currentUser,
     allUsers,
     createAuditorAssignment,
+    queueLoading,
+    queueError,
   } = useAuditStore();
 
   // Search & Filter state
@@ -202,6 +204,16 @@ export const AuditQueueView: React.FC<AuditQueueViewProps> = ({
 
   return (
     <div className="space-y-4 pb-12">
+      {queueLoading && (
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          Đang tải dữ liệu Audit Queue…
+        </div>
+      )}
+      {queueError && !queueLoading && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-sm dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+          Không thể tải Audit Queue: {queueError}. Vui lòng tải lại trang.
+        </div>
+      )}
       {/* 1. Tiêu đề trang (22–26px) & 2. Một dòng mô tả ngắn */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">

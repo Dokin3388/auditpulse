@@ -67,6 +67,8 @@ export interface AuditStoreContextType {
   // Role-filtered views helper
   filteredQueueItems: AuditQueueItem[];
   filteredActions: CorrectiveAction[];
+  queueLoading: boolean;
+  queueError: string | null;
   // Actions
   saleMarkActionDone: (actionId: string, notes: string, evidence?: Evidence) => { success: boolean; message: string };
   auditorStartRecheck: (actionId: string) => Promise<{ success: boolean; message: string }>;
@@ -194,6 +196,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
 
   // Core reactive entities
   const [queueItems, setQueueItems] = useState<AuditQueueItem[]>([]);
+  const [queueLoading, setQueueLoading] = useState(true);
+  const [queueError, setQueueError] = useState<string | null>(null);
   const [auditCases] = useState<AuditCase[]>([]);
   const [correctiveActions, setCorrectiveActions] = useState<CorrectiveAction[]>([]);
   const [issueDefinitions, setIssueDefinitions] = useState<IssueDefinition[]>([]);
@@ -215,8 +219,14 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
     // performed by the scheduled server job or the explicit upload flow, not
     // on every Head Auditor page load. That keeps the worklist responsive.
     void getAuditQueue().then((items) => {
-      if (!cancelled) setQueueItems(items);
-    }).catch(() => undefined);
+      if (cancelled) return;
+      setQueueItems(items);
+      setQueueError(null);
+    }).catch((error) => {
+      if (!cancelled) setQueueError(error instanceof Error ? error.message : 'Không thể tải Audit Queue.');
+    }).finally(() => {
+      if (!cancelled) setQueueLoading(false);
+    });
 
     void Promise.allSettled([
       getAppUsers(),
@@ -669,6 +679,8 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
         salesOrders,
         filteredQueueItems,
         filteredActions,
+        queueLoading,
+        queueError,
         saleMarkActionDone,
         auditorStartRecheck,
         auditorSubmitRecheck,

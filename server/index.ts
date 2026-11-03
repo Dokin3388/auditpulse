@@ -547,38 +547,7 @@ app.get('/api/queue', async (req: Request, res: Response) => {
           WHEN q.status = 'UNASSIGNED' AND effective_assignment.auditor_id IS NOT NULL THEN 'ASSIGNED'
           ELSE q.status
         END AS status,
-        (
-          CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = q.audit_date - 1
-            THEN jsonb_build_array(jsonb_build_object(
-              'code', 'YESTERDAY_CUSTOMERS', 'label', 'Khách tạo hôm qua',
-              'description', 'Khách được tạo trong ngày D-1 (hôm qua).', 'detectedAt', q.audit_date::text
-            )) ELSE '[]'::jsonb END
-          || CASE WHEN (c.first_seen_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= q.audit_date - 7
-            AND NOT EXISTS (
-            SELECT 1 FROM quotations qt
-            WHERE qt.customer_id = q.customer_id
-              AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date - 1
-          ) THEN jsonb_build_array(jsonb_build_object(
-            'code', 'NO_QUOTATION', 'label', 'Chưa báo giá',
-            'description', 'Khách mới trong 7 ngày, chưa có báo giá nào tính đến D-1.', 'detectedAt', q.audit_date::text
-          )) ELSE '[]'::jsonb END
-          || CASE WHEN EXISTS (
-            SELECT 1 FROM quotations qt
-            WHERE qt.customer_id = q.customer_id
-              AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date - 1
-              AND (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= q.audit_date - 14
-              AND NOT EXISTS (
-                SELECT 1 FROM sales_orders so
-                WHERE so.customer_id = q.customer_id AND so.status = 'VALID'
-                  AND (so.order_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= (qt.quote_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
-                  AND (so.order_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= q.audit_date
-              )
-          ) THEN jsonb_build_array(jsonb_build_object(
-            'code', 'QUOTED_NOT_ORDERED', 'label', 'Báo giá chưa chốt',
-            'description', 'Có báo giá trong 14 ngày nhưng chưa có đơn hợp lệ.', 'detectedAt', q.audit_date::text
-          )) ELSE '[]'::jsonb END
-          || COALESCE(q.risk_tags, '[]'::jsonb)
-        ) AS "riskTags",
+        COALESCE(q.risk_tags, '[]'::jsonb) AS "riskTags",
         q.active_action_id AS "activeActionId",
         q.rule_version AS "ruleVersion",
         q.sync_timestamp AS "syncTimestamp",
