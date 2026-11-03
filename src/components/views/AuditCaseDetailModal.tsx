@@ -52,7 +52,11 @@ export const AuditCaseDetailModal: React.FC<AuditCaseDetailModalProps> = ({
 
   // Check role permission
   const isAssignedAuditor =
-    currentUser.role === 'AUDITOR' && currentUser.auditorId === queueItem.assignedAuditorId;
+    currentUser.role === 'AUDITOR' && (
+      currentUser.auditorId === queueItem.assignedAuditorId ||
+      currentUser.id === queueItem.assignedAuditorId ||
+      currentUser.name === queueItem.assignedAuditorName
+    );
   const isHeadOrAdmin = currentUser.role === 'HEAD_AUDITOR' || currentUser.role === 'ADMIN';
   const canAudit = isAssignedAuditor || isHeadOrAdmin;
 
