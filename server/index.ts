@@ -99,32 +99,11 @@ app.post('/api/auth/sign-in/email', async (req: Request, res: Response, next: Ne
   return authHandler(req, res, next);
 });
 
-app.post('/api/auth/sign-up/email', async (req: Request, res: Response, next: NextFunction) => {
-  const payload = (req.body ?? {}) as { name?: string; email?: string; password?: string };
-  const name = typeof payload.name === 'string' ? payload.name.trim() : '';
-  const email = typeof payload.email === 'string' ? payload.email.trim() : '';
-  const password = typeof payload.password === 'string' ? payload.password : '';
-
-  if (!name || !email || !password) {
-    res.status(400).json({ message: 'Tên, email và mật khẩu là bắt buộc.' });
-    return;
-  }
-
-  const appUser = await getAppUserByEmail(email);
-  const blockReason = getLoginGateFailure({
-    role: appUser?.role ?? null,
-    loginEnabled: appUser?.loginEnabled ?? null,
-    isActive: appUser?.isActive ?? null,
-  });
-
-  if (!appUser || blockReason) {
-    res.status(403).json({
-      message: blockReason || 'Tài khoản chưa được cấp quyền AuditPulse.',
-    });
-    return;
-  }
-
-  return authHandler(req, res, next);
+app.post('/api/auth/sign-up/email', async (_req: Request, res: Response) => {
+  // Public self-signup is disabled after the initial bootstrap. Accounts are
+  // provisioned by Head Auditor/Admin so role and login policy cannot be
+  // bypassed through Better Auth's generic endpoint.
+  res.status(403).json({ message: 'Tạo tài khoản công khai đã bị khóa. Vui lòng liên hệ Head Auditor để được cấp tài khoản.' });
 });
 
 // Better Auth handles the remaining auth endpoints (session lookup, sign-out, etc.).

@@ -8,11 +8,15 @@ import { pool } from './db.ts';
 const authDatabase = new PostgresDialect({ pool });
 
 const appOrigin = process.env.BETTER_AUTH_URL || 'http://localhost:5173';
-const authSecret = process.env.BETTER_AUTH_SECRET || 'auditpulse-local-development-secret-change-me';
+const authSecret = process.env.BETTER_AUTH_SECRET;
+
+if (process.env.NODE_ENV === 'production' && !authSecret) {
+  throw new Error('BETTER_AUTH_SECRET bắt buộc phải được cấu hình ở production.');
+}
 
 export const auth = betterAuth({
   database: authDatabase,
-  secret: authSecret,
+  secret: authSecret || 'auditpulse-local-development-secret-change-me',
   baseURL: appOrigin,
   trustedOrigins: [appOrigin],
   emailAndPassword: {
