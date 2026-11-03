@@ -119,6 +119,8 @@ async function runRollback() {
           DROP TABLE IF EXISTS unmatched_transactions CASCADE;
           DROP TABLE IF EXISTS customer_identifiers CASCADE;
         `);
+      } else if (latestVersion === '0010_password_reset_tokens.sql') {
+        await client.query('DROP TABLE IF EXISTS password_reset_tokens CASCADE;');
       } else if (latestVersion === '0009_queue_performance_indexes.sql') {
         await client.query(`
           DROP INDEX IF EXISTS idx_quotations_customer_quote_date;

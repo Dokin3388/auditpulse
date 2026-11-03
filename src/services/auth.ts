@@ -35,6 +35,20 @@ export async function signInEmail(email: string, password: string): Promise<void
   }
 }
 
+export async function requestPasswordReset(email: string): Promise<string> {
+  const response = await authRequest('/request-password-reset', { email });
+  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  if (!response.ok) throw new Error(payload?.message || 'Không thể gửi email đặt lại mật khẩu.');
+  return payload?.message || 'Nếu email hợp lệ, hướng dẫn sẽ được gửi đến hộp thư.';
+}
+
+export async function resetPassword(token: string, password: string): Promise<string> {
+  const response = await authRequest('/reset-password', { token, password });
+  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  if (!response.ok) throw new Error(payload?.message || 'Không thể đặt lại mật khẩu.');
+  return payload?.message || 'Đã đặt lại mật khẩu.';
+}
+
 export async function signUpEmail(name: string, email: string, password: string): Promise<void> {
   const response = await authRequest('/sign-up/email', { name, email, password });
   if (!response.ok) {

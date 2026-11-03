@@ -4,7 +4,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { query, withTransaction, pool } from './db.ts';
 import {
   parseCsv,
@@ -104,6 +104,53 @@ app.post('/api/auth/sign-up/email', async (_req: Request, res: Response) => {
   // provisioned by Head Auditor/Admin so role and login policy cannot be
   // bypassed through Better Auth's generic endpoint.
   res.status(403).json({ message: 'Tạo tài khoản công khai đã bị khóa. Vui lòng liên hệ Head Auditor để được cấp tài khoản.' });
+});
+
+app.post('/api/auth/request-password-reset', async (req: Request, res: Response) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const generic = 'Nếu email có quyền AuditPulse, hướng dẫn đặt lại mật khẩu sẽ được gửi đến hộp thư.';
+  if (!email) { res.status(400).json({ message: 'Email không được để trống.' }); return; }
+  const appUser = await getAppUserByEmail(email);
+  if (!appUser || appUser.isActive === false || appUser.loginEnabled === false) {
+    res.json({ message: generic }); return;
+  }
+  const authUser = await query<{ id: string }>('SELECT id FROM "user" WHERE lower(email) = lower($1) LIMIT 1', [email]);
+  if (!authUser.rows[0]) { res.json({ message: generic }); return; }
+  const rawToken = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+  await query('DELETE FROM password_reset_tokens WHERE user_id = $1 OR expires_at < NOW()', [authUser.rows[0].id]);
+  await query(
+    `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL '30 minutes')`,
+    [`PRT-${randomBytes(12).toString('hex')}`, authUser.rows[0].id, tokenHash]
+  );
+  const resetUrl = `${process.env.BETTER_AUTH_URL || 'http://localhost:5173'}/reset-password?token=${rawToken}`;
+  const brevoKey = process.env.BREVO_API_KEY;
+  const senderEmail = process.env.BREVO_SENDER_EMAIL;
+  if (!brevoKey || !senderEmail) { res.status(503).json({ message: 'Hệ thống email chưa được cấu hình. Vui lòng liên hệ Head Auditor.' }); return; }
+  const mailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST', headers: { 'accept': 'application/json', 'api-key': brevoKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ sender: { email: senderEmail, name: 'AuditPulse' }, to: [{ email }], subject: 'Đặt lại mật khẩu AuditPulse', htmlContent: `<p>Xin chào ${appUser.name},</p><p>Bấm vào liên kết dưới đây để đặt lại mật khẩu. Liên kết có hiệu lực trong 30 phút.</p><p><a href="${resetUrl}">Đặt lại mật khẩu</a></p><p>Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>` }),
+  });
+  if (!mailResponse.ok) { res.status(502).json({ message: 'Không gửi được email đặt lại mật khẩu. Vui lòng liên hệ Head Auditor.' }); return; }
+  res.json({ message: generic });
+});
+
+app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!token || password.length < 8) { res.status(400).json({ message: 'Token hoặc mật khẩu không hợp lệ.' }); return; }
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const result = await query<{ id: string; userId: string }>(`SELECT id, user_id AS "userId" FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() LIMIT 1`, [tokenHash]);
+  const row = result.rows[0];
+  if (!row) { res.status(400).json({ message: 'Liên kết đặt lại mật khẩu đã hết hạn hoặc đã được sử dụng.' }); return; }
+  const passwordHash = await hashPassword(password);
+  await withTransaction(async (client) => {
+    const updated = await client.query(`UPDATE account SET password = $1, "updatedAt" = NOW() WHERE "userId" = $2 AND "providerId" = 'credential'`, [passwordHash, row.userId]);
+    if (updated.rowCount !== 1) throw new Error('Không tìm thấy tài khoản mật khẩu.');
+    await client.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1', [row.id]);
+    await client.query('DELETE FROM session WHERE "userId" = $1', [row.userId]);
+  });
+  res.json({ message: 'Đã đặt lại mật khẩu. Vui lòng đăng nhập lại.' });
 });
 
 // Better Auth handles the remaining auth endpoints (session lookup, sign-out, etc.).
