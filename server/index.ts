@@ -131,7 +131,17 @@ app.post('/api/auth/request-password-reset', async (req: Request, res: Response)
     method: 'POST', headers: { 'accept': 'application/json', 'api-key': brevoKey, 'content-type': 'application/json' },
     body: JSON.stringify({ sender: { email: senderEmail, name: 'AuditPulse' }, to: [{ email }], subject: 'Đặt lại mật khẩu AuditPulse', htmlContent: `<p>Xin chào ${appUser.name},</p><p>Bấm vào liên kết dưới đây để đặt lại mật khẩu. Liên kết có hiệu lực trong 30 phút.</p><p><a href="${resetUrl}">Đặt lại mật khẩu</a></p><p>Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>` }),
   });
-  if (!mailResponse.ok) { res.status(502).json({ message: 'Không gửi được email đặt lại mật khẩu. Vui lòng liên hệ Head Auditor.' }); return; }
+  if (!mailResponse.ok) {
+    const brevoError = await mailResponse.text().catch(() => '');
+    console.error('[password-reset] Brevo rejected email', {
+      status: mailResponse.status,
+      statusText: mailResponse.statusText,
+      response: brevoError.slice(0, 500),
+      senderConfigured: Boolean(senderEmail),
+    });
+    res.status(502).json({ message: 'Không gửi được email đặt lại mật khẩu. Vui lòng liên hệ Head Auditor.' });
+    return;
+  }
   res.json({ message: generic });
 });
 
