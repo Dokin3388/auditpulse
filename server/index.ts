@@ -1417,9 +1417,13 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
 
   try {
     const input = parseCreateInput(req.body);
-    const result = await withTransaction((client) => createAssignmentsInTransaction(client, input, actor));
+    const result = await withTransaction(async (client) => {
+      const assignmentResult = await createAssignmentsInTransaction(client, input, actor);
+      const queueResult = await materializeQueueForDate(client, null);
+      return { ...assignmentResult, queueResult };
+    });
     res.setHeader('Cache-Control', 'no-store');
-    res.status(201).json({ success: true, message: result.message, data: result.assignments });
+    res.status(201).json({ success: true, message: result.message, data: result.assignments, queue: result.queueResult });
   } catch (err: unknown) {
     const known = toAssignmentError(err);
     if (known) {

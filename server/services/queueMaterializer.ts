@@ -247,6 +247,10 @@ export async function materializeQueueForDate(client: pg.PoolClient, auditDate: 
            SELECT COALESCE(jsonb_agg(DISTINCT t), '[]'::jsonb)
            FROM jsonb_array_elements(COALESCE(audit_queue_items.risk_tags, '[]'::jsonb) || EXCLUDED.risk_tags) AS t
          ),
+         assigned_auditor_id = COALESCE(audit_queue_items.assigned_auditor_id, EXCLUDED.assigned_auditor_id),
+         assigned_at = COALESCE(audit_queue_items.assigned_at, EXCLUDED.assigned_at),
+         status = CASE WHEN audit_queue_items.status = 'UNASSIGNED' AND EXCLUDED.assigned_auditor_id IS NOT NULL THEN 'ASSIGNED' ELSE audit_queue_items.status END,
+         snapshot_auditor_name = COALESCE(audit_queue_items.snapshot_auditor_name, EXCLUDED.snapshot_auditor_name),
          sync_timestamp = NOW()`,
       [
         queueId, runId, date, group.customer.id, group.sale.id, group.team.id,
