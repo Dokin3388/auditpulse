@@ -585,10 +585,16 @@ app.get('/api/queue', async (req: Request, res: Response) => {
         q.shared_work AS "sharedWork"
       FROM audit_queue_items q
       JOIN customers c ON c.id = q.customer_id
+      LEFT JOIN app_users queue_sale ON queue_sale.id = q.sale_id
       LEFT JOIN LATERAL (
         SELECT a.auditor_id, a.snapshot_auditor_name AS auditor_name
         FROM auditor_assignments a
-        WHERE a.sale_id = q.sale_id
+        WHERE (a.sale_id = q.sale_id
+           OR EXISTS (
+             SELECT 1 FROM app_users assigned_sale
+             WHERE assigned_sale.id = a.sale_id
+               AND lower(assigned_sale.name) = lower(COALESCE(queue_sale.name, q.snapshot_sale_name))
+           ))
           AND a.effective_from <= q.audit_date
           AND (a.effective_to IS NULL OR a.effective_to >= q.audit_date)
         ORDER BY a.effective_from DESC
@@ -1429,8 +1435,10 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
                 sync_timestamp = NOW()
            FROM auditor_assignments a
            JOIN app_users u ON u.id = a.auditor_id
+           JOIN app_users assigned_sale ON assigned_sale.id = a.sale_id
+           LEFT JOIN app_users queue_sale ON queue_sale.id = q.sale_id
           WHERE q.audit_date = (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
-            AND q.sale_id = a.sale_id
+            AND (q.sale_id = a.sale_id OR lower(assigned_sale.name) = lower(COALESCE(queue_sale.name, q.snapshot_sale_name)))
             AND a.effective_from <= q.audit_date
             AND (a.effective_to IS NULL OR a.effective_to >= q.audit_date)
             AND q.assigned_auditor_id IS NULL
