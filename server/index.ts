@@ -393,8 +393,13 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
   ];
 
   try {
-    const created: Array<{ id: string; name: string; email: string; password: string }> = [];
+    const created: Array<{ id: string; name: string; email: string; password: string; status: 'created' | 'existing' }> = [];
     for (const account of accounts) {
+      const existingResult = await query<{ id: string }>(
+        `SELECT id FROM app_users WHERE lower(email) = lower($1) LIMIT 1`,
+        [account.email]
+      );
+      const targetId = existingResult.rows[0]?.id ?? account.id;
       await query(
         `INSERT INTO app_users (id, email, name, role, is_active, login_enabled)
          VALUES ($1, $2, $3, 'AUDITOR', TRUE, TRUE)
@@ -403,21 +408,22 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
            role = 'AUDITOR',
            is_active = TRUE,
            login_enabled = TRUE`,
-        [account.id, account.email, account.name]
+        [targetId, account.email, account.name]
       );
       await query(
         `INSERT INTO auditor_profiles (id, auditor_code, max_daily_capacity)
          VALUES ($1, $2, 80)
          ON CONFLICT (id) DO UPDATE SET auditor_code = EXCLUDED.auditor_code`,
-        [account.id, account.code]
+        [targetId, account.code]
       );
       const userResult = await query<{ id: string; name: string; role: string }>(
         `SELECT id, name, role FROM app_users WHERE id = $1 AND role = 'AUDITOR' AND is_active = true`,
-        [account.id]
+        [targetId]
       );
       const appUser = userResult.rows[0];
       if (!appUser) continue;
       const temporaryPassword = `AuditPulse-${randomBytes(9).toString('base64url')}`;
+      let status: 'created' | 'existing' = 'created';
 
       try {
         await auth.api.signUpEmail({
@@ -426,12 +432,21 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('unique')) continue;
-        throw error;
+        if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('unique')) {
+          status = 'existing';
+        } else {
+          throw error;
+        }
       }
 
-      await query(`UPDATE app_users SET email = $1 WHERE id = $2`, [account.email, account.id]);
-      created.push({ id: account.id, name: appUser.name, email: account.email, password: temporaryPassword });
+      await query(`UPDATE app_users SET email = $1 WHERE id = $2`, [account.email, targetId]);
+      created.push({
+        id: targetId,
+        name: appUser.name,
+        email: account.email,
+        password: status === 'created' ? temporaryPassword : 'Đã tồn tại — giữ mật khẩu hiện tại',
+        status,
+      });
     }
     res.json({ success: true, accounts: created });
   } catch (err: unknown) {

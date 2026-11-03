@@ -134,14 +134,14 @@ export async function createAssignments(input: CreateAssignmentsRequest): Promis
   return { message: payload.message || 'Đã lưu phân công.', assignments: payload.data };
 }
 
-export async function bootstrapAuditorAccounts(): Promise<Array<{ id: string; name: string; email: string; password: string }>> {
+export async function bootstrapAuditorAccounts(): Promise<Array<{ id: string; name: string; email: string; password: string; status: 'created' | 'existing' }>> {
   const response = await fetch('/api/admin/bootstrap-auditors', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',
   });
-  const payload = (await response.json().catch(() => null)) as { accounts?: Array<{ id: string; name: string; email: string; password: string }>; error?: string } | null;
+  const payload = (await response.json().catch(() => null)) as { accounts?: Array<{ id: string; name: string; email: string; password: string; status: 'created' | 'existing' }>; error?: string } | null;
   if (!response.ok) throw new Error(payload?.error || 'Không thể tạo tài khoản Auditor.');
   return payload?.accounts || [];
 }
