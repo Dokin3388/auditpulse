@@ -1420,7 +1420,23 @@ app.post('/api/assignments', async (req: Request, res: Response) => {
     const result = await withTransaction(async (client) => {
       const assignmentResult = await createAssignmentsInTransaction(client, input, actor);
       const queueResult = await materializeQueueForDate(client, null);
-      return { ...assignmentResult, queueResult };
+      const directQueueUpdate = await client.query(
+        `UPDATE audit_queue_items q
+            SET assigned_auditor_id = a.auditor_id,
+                assigned_at = COALESCE(q.assigned_at, NOW()),
+                snapshot_auditor_name = COALESCE(a.snapshot_auditor_name, u.name),
+                status = CASE WHEN q.status = 'UNASSIGNED' THEN 'ASSIGNED' ELSE q.status END,
+                sync_timestamp = NOW()
+           FROM auditor_assignments a
+           JOIN app_users u ON u.id = a.auditor_id
+          WHERE q.audit_date = (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+            AND q.sale_id = a.sale_id
+            AND a.effective_from <= q.audit_date
+            AND (a.effective_to IS NULL OR a.effective_to >= q.audit_date)
+            AND q.assigned_auditor_id IS NULL
+         RETURNING q.id`,
+      );
+      return { ...assignmentResult, queueResult, directQueueUpdated: directQueueUpdate.rowCount ?? 0 };
     });
     res.setHeader('Cache-Control', 'no-store');
     res.status(201).json({ success: true, message: result.message, data: result.assignments, queue: result.queueResult });
