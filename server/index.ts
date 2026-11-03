@@ -35,6 +35,7 @@ import {
 import type { RecheckResult, CorrectiveActionStatus } from '../src/types/index.ts';
 import { auth } from './auth.ts';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
+import { hashPassword } from 'better-auth/crypto';
 import { getLoginGateFailure, isLoginAllowedRole } from '../src/services/authPolicy.ts';
 
 dotenv.config();
@@ -434,6 +435,19 @@ app.post('/api/admin/bootstrap-auditors', async (req: Request, res: Response) =>
         const message = error instanceof Error ? error.message : String(error);
         if (message.toLowerCase().includes('already exists') || message.toLowerCase().includes('unique')) {
           status = 'existing';
+          const authUserResult = await query<{ id: string }>(
+            `SELECT id FROM "user" WHERE lower(email) = lower($1) LIMIT 1`,
+            [account.email]
+          );
+          const authUserId = authUserResult.rows[0]?.id;
+          if (!authUserId) throw new Error(`Tài khoản ${account.email} đã báo tồn tại nhưng không tìm thấy hồ sơ đăng nhập.`);
+          const passwordHash = await hashPassword(temporaryPassword);
+          const resetResult = await query(
+            `UPDATE account SET password = $1, "updatedAt" = NOW()
+             WHERE "userId" = $2 AND "providerId" = 'credential'`,
+            [passwordHash, authUserId]
+          );
+          if (resetResult.rowCount !== 1) throw new Error(`Không thể cấp lại mật khẩu cho ${account.email}.`);
         } else {
           throw error;
         }
