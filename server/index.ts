@@ -655,7 +655,20 @@ app.post('/api/queue/:id/complete-audit', async (req: Request, res: Response) =>
       const queueItem = queueResult.rows[0];
       if (!queueItem) throw new Error('Không tìm thấy ca audit.');
       const isHead = actor.role === 'HEAD_AUDITOR' || actor.role === 'ADMIN';
-      const isAssignedAuditor = actor.role === 'AUDITOR' && queueItem.assignedAuditorId === actor.id;
+      // Assignments may contain the internal app user id, while the queue API
+      // exposes the auditor code (AUD-01). Accept both representations so the
+      // same assigned auditor is not rejected at the final write step.
+      const actorAuditorResult = actor.role === 'AUDITOR'
+        ? await client.query<{ auditorCode: string | null }>(
+          `SELECT auditor_code AS "auditorCode" FROM auditor_profiles WHERE id = $1 LIMIT 1`,
+          [actor.id]
+        )
+        : { rows: [] as Array<{ auditorCode: string | null }> };
+      const actorAuditorCode = actorAuditorResult.rows[0]?.auditorCode;
+      const isAssignedAuditor = actor.role === 'AUDITOR' && (
+        queueItem.assignedAuditorId === actor.id ||
+        (!!actorAuditorCode && queueItem.assignedAuditorId === actorAuditorCode)
+      );
       if (!isHead && !isAssignedAuditor) throw new Error('Chỉ Auditor được phân công hoặc Head Auditor mới được chốt ca audit này.');
       if (['COMPLETED_PASS', 'COMPLETED_FAIL', 'SKIPPED', 'BLOCKED'].includes(queueItem.status)) {
         throw new Error('Ca audit này đã được chốt trước đó.');

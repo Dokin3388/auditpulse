@@ -617,9 +617,12 @@ export const AuditProvider: React.FC<{ children: ReactNode; initialUser?: UserPr
   ) => {
     try {
       const result = await completeAuditQueueItem({ queueItemId, issueCodes: selectedIssueCodes, generalNotes });
-      const [latestQueue, latestActions] = await Promise.all([getAuditQueue(), getCorrectiveActions()]);
+      // The write response is already committed before this point. Refresh the
+      // queue before returning so the modal closes promptly; Action data can
+      // refresh in the background and must not make the save look hung.
+      const latestQueue = await getAuditQueue();
       setQueueItems(latestQueue);
-      setCorrectiveActions(latestActions);
+      void getCorrectiveActions().then(setCorrectiveActions).catch(() => undefined);
       return { success: true, message: result.message, caseId: result.caseId, linkedActionId: result.linkedActionId };
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : 'Không thể chốt ca audit.' };
